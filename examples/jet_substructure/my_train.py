@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import JetSubstructureDataset
-from models import JetSubstructureNeqModel
+from models import JetSubstructureNeqModel, JetSubstructureConvNeqModel # N added
 
 # N - added
 import torchvision
@@ -43,34 +43,54 @@ import os
 class Teacher(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28*28, 256)
+        
+        # self.fc1 = nn.Linear(28*28, 256)
+        # self.act1 = nn.LeakyReLU(negative_slope=0.2)
+        # self.fc2 = nn.Linear(256, 256)
+        # self.act2 = nn.LeakyReLU(negative_slope=0.2)
+        # self.fc3 = nn.Linear(256, 256)
+        # self.act3 = nn.LeakyReLU(negative_slope=0.2)
+        # self.fc4 = nn.Linear(256, 256)
+        # self.act4 = nn.LeakyReLU(negative_slope=0.2)
+        # self.fc_final = nn.Linear(256, 10)
+
+        self.conv1 = nn.Conv2d(1, 256, (3,3), stride=(2, 2))
         self.act1 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc2 = nn.Linear(256, 256)
-        self.act2 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc3 = nn.Linear(256, 256)
-        self.act3 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc4 = nn.Linear(256, 256)
-        self.act4 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc_final = nn.Linear(256, 10)
+        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
+        self.conv2 = nn.Conv2d(256, 512, (3,3), stride=(2, 2))
+        self.fc = nn.Linear(512*7*7, 10)
 
     # sooo - discovered Keras mis-documented padding=same (https://github.com/keras-team/keras/issues/15703), bc setting stride>1 yields output size diff to input
     # which means output of e.g. conv1 was 14x14 instead of 28x28
-    # Hence, after looking at model summary of ref KD and checking dimensions, basically did educated trial and error to get padding here in PyTorch Lightning to yield same output sizes at each layer, to compare
+    # Hence, after looking at model summary of ref KD and checking dimensions, basically did educated trial and error to get padding here in PyTorch Lightning to yield same output sizes at each layer as Keras, to compare
     # Many key points, incl: 'padding' arg of nn.Conv2D does not allow diff left/right or top/bottom padding, only one tuple of (left/right, top/bot), so odd kernel size screws things up
     # Hence have to use F.pad to explicitly pad left and right, top and bottom separately
     # Also, padding='same' only supported for stride=(1,1), in nn.Conv2D
     def forward(self, x):
         # print(x.size())
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
-        x = self.fc1(x)
+        # x = torch.flatten(x, 1) # flatten all dimensions except batch
+        # x = self.fc1(x)
+        # x = self.act1(x)
+        # x = self.fc2(x)
+        # x = self.act2(x)
+        # x = self.fc3(x)
+        # x = self.act3(x)
+        # x = self.fc4(x)
+        # x = self.act4(x)
+        # x = self.fc_final(x)
+        # print(x.size())
+        x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv1(x)
         x = self.act1(x)
-        x = self.fc2(x)
-        x = self.act2(x)
-        x = self.fc3(x)
-        x = self.act3(x)
-        x = self.fc4(x)
-        x = self.act4(x)
-        x = self.fc_final(x)
+        # print(x.size())
+        x = F.pad(x, (1, 0, 1, 0))
+        x = self.pool(x)
+        # print(x.size())
+        x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv2(x)
+        # print(x.size())
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = self.fc(x)
         return x
     
 
@@ -123,10 +143,27 @@ class MNISTDataModule(pl.LightningDataModule):
     self.mnist_test = MNIST(os.getcwd(), train=False, download=True, transform=transform)
 
   def train_dataloader(self):
-    return DataLoader(self.mnist_train, batch_size=64, num_workers=10)
+    return DataLoader(self.mnist_train, batch_size=64, num_workers=0)
 
   def test_dataloader(self):
-    return DataLoader(self.mnist_test, batch_size=64, num_workers=10)
+    return DataLoader(self.mnist_test, batch_size=64, num_workers=0)
+  
+class CIFAR10DataModule(pl.LightningDataModule):
+
+  def setup(self, stage):
+    # transforms for images
+    transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize((0.5,), (0.5,), (0.5,))])
+      
+    # prepare transforms standard to MNIST
+    self.cifar10_train = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    self.cifar10_test = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
+
+  def train_dataloader(self):
+    return DataLoader(self.cifar10_train, batch_size=32, num_workers=8)
+
+  def test_dataloader(self):
+    return DataLoader(self.cifar10_test, batch_size=32, num_workers=8)
 
 ######################################### end N Added ###############################################
 
@@ -181,7 +218,7 @@ configs = {
     },
     ########################### start N Added #######################
     "LFC-student": {
-        "hidden_layers": [64, 32, 32, 32],
+        "hidden_layers": [64, 32, 32, 32], # treat number as FC so don't have to change code, but introduce e.g. ('conv', 32)?
         "input_bitwidth": 2,
         "hidden_bitwidth": 2,
         "output_bitwidth": 2,
@@ -195,12 +232,38 @@ configs = {
         "seed": 2,
         "checkpoint": None,
     },
+    "conv-student": {
+        "hidden_layers": {
+            "conv": [16, 32],
+            "fc": [10],
+        },
+        "conv_params": {
+            "in_height": 28,
+            "in_width": 28,
+            "in_channels": 1,
+            "kernel_height": 3,
+            "kernel_width": 3,
+        },
+        "input_bitwidth": 2,
+        "hidden_bitwidth": 2,
+        "output_bitwidth": 2,
+        "input_fanin": 3,
+        "hidden_fanin": 3,
+        "output_fanin": 3,
+        "weight_decay": 1e-3,
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 1e-3,
+        "seed": 2,
+        "checkpoint": None,
+    },
      ########################### end N Added #######################
 }
 
 # A dictionary, so we can set some defaults if necessary
 model_config = {
     "hidden_layers": None,
+    "conv_params": None, # N added
     "input_bitwidth": None,
     "hidden_bitwidth": None,
     "output_bitwidth": None,
@@ -340,12 +403,13 @@ def train(model, datasets, train_cfg, options, teacher_model): # N - added teach
             # .eq returns bool tensor with True at indices where pred matched target_label; .long converts to ints - True 1, False 0; sum gives total 1s hence correct preds
             curCorrect = pred.eq(target_label).long().sum()
 
-            print("teacher_predictions:", teacher_predictions)
-            print("output:", output)
-            print("target:", target)
-            print("pred:", pred)
-            print("target_label:", target_label)
-            print("currCorrect:", curCorrect)
+            # print("teacher_predictions:", teacher_predictions)
+            # print("output:", output)
+            # print("target:", target)
+            # print("pred:", pred)
+            # print("target_label:", target_label)
+            # print("currCorrect:", curCorrect)
+            # print("batch_idx:", batch_idx)
 
             ########################### end N changed #######################
 
@@ -465,6 +529,10 @@ if __name__ == "__main__":
         help="The file to use to configure the input dataset (default: %(default)s)")
     parser.add_argument('--checkpoint', type=str, default=None,
         help="Retrain the model from a previous checkpoint (default: %(default)s)")
+    ########## start N added #########
+    parser.add_argument('--conv-params', nargs='+', type=int, default=None,
+        help="A dictionary of convolution parameters like kernel size (default: %(default)s)")
+    ########## end N added #########
     args = parser.parse_args()
     defaults = configs[args.arch]
     options = vars(args)
@@ -518,10 +586,14 @@ if __name__ == "__main__":
     # dataset['test'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="test")
 
     # transforms for images
+    # transform=transforms.Compose([transforms.ToTensor(), 
+    #                               transforms.Normalize((0.5,), (0.5,)),
+    #                               transforms.Lambda(torch.flatten)]) # need to add torch.flatten bc student model is currently same as jsc and accepts only 1D vec as input data, not 2D MNIST images
+    
+    # transforms for images
     transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,)),
-                                  transforms.Lambda(torch.flatten)]) # need to add torch.flatten bc student model is currently same as jsc and accepts only 1D vec as input data, not 2D MNIST images
-      
+                                  transforms.Normalize((0.5,), (0.5,))])
+    
     # prepare transforms standard to MNIST
     dataset['train'] = MNIST(os.getcwd(), train=True, download=True, transform=transform)
     dataset['valid'] = MNIST(os.getcwd(), train=True, download=True, transform=transform)
@@ -533,9 +605,9 @@ if __name__ == "__main__":
 
     # Instantiate model
     x, y = dataset['train'][0]
-    model_cfg['input_length'] = len(x)
+    # model_cfg['input_length'] = len(x)
     model_cfg['output_length'] = 10 #10 diff classes in MNIST # N - changed from len(y)
-    model = JetSubstructureNeqModel(model_cfg)
+    model = JetSubstructureConvNeqModel(model_cfg)
     if options_cfg['checkpoint'] is not None:
         print(f"Loading pre-trained checkpoint {options_cfg['checkpoint']}")
         checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
