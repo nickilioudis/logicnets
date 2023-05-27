@@ -155,7 +155,7 @@ class JetSubstructureConvNeqModel(nn.Module):
         # each conv hidden layer defined as num output channels, and since will do serial patch calculations for now, each output channel is one NEQ
         # each fc hidden layer just num neurons in that layer
         # TODO: currently only support simplest convolution layers; need to add sparse_conv_kws like stride, padding... to pass when instantiating layer as SparseConvNeq; must add these and kernel size to config explicitly?
-        self.conv_out_flat_length = 24*24*32 # self.in_height * self.in_width * model_config["hidden_layers"]["conv"][-1]  # assumes padding same: otherwise calc using input dims, kernel size, stride, padding? See pytorhc CONV2D page
+        self.conv_out_flat_length = 26*26*32 #24*24*32 # self.in_height * self.in_width * model_config["hidden_layers"]["conv"][-1]  # assumes padding same: otherwise calc using input dims, kernel size, stride, padding? See pytorhc CONV2D page # this changed with dataset!
         self.num_neurons_conv = [self.in_channels] + model_config["hidden_layers"]["conv"]
         self.num_neurons_fc = [self.conv_out_flat_length] + model_config["hidden_layers"]["fc"] + [model_config["output_length"]]
         layer_list = []

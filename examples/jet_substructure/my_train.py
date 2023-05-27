@@ -33,7 +33,8 @@ from models import JetSubstructureNeqModel, JetSubstructureConvNeqModel # N adde
 # N - added
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.datasets import MNIST
+# from torchvision.datasets import MNIST
+from torchvision.datasets import CIFAR10
 import torchmetrics
 import pytorch_lightning as pl
 import os
@@ -43,22 +44,63 @@ import os
 class Teacher(nn.Module):
     def __init__(self):
         super().__init__()
-        
-        # self.fc1 = nn.Linear(28*28, 256)
-        # self.act1 = nn.LeakyReLU(negative_slope=0.2)
-        # self.fc2 = nn.Linear(256, 256)
-        # self.act2 = nn.LeakyReLU(negative_slope=0.2)
-        # self.fc3 = nn.Linear(256, 256)
-        # self.act3 = nn.LeakyReLU(negative_slope=0.2)
-        # self.fc4 = nn.Linear(256, 256)
-        # self.act4 = nn.LeakyReLU(negative_slope=0.2)
-        # self.fc_final = nn.Linear(256, 10)
 
-        self.conv1 = nn.Conv2d(1, 256, (3,3), stride=(2, 2))
-        self.act1 = nn.LeakyReLU(negative_slope=0.2)
+        self.conv1 = nn.Conv2d(3, 64, (3,3), stride=(1, 1)) #channel input number also changes with dataset
+        self.batchnorm2d1 = nn.BatchNorm2d(64)
+        # self.act1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
+        self.batchnorm2d2 = nn.BatchNorm2d(64)
+        # self.act2 = nn.ReLU()
+        # self.pool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
+
+        self.conv3 = nn.Conv2d(64, 128, (3,3), stride=(1, 1))
+        self.batchnorm2d3 = nn.BatchNorm2d(128)
+        self.conv4 = nn.Conv2d(128, 128, (3,3), stride=(1, 1))
+        self.batchnorm2d4 = nn.BatchNorm2d(128)
+        # self.act3 = nn.ReLU()
+        # self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
+
+        self.conv5 = nn.Conv2d(128, 256, (3,3), stride=(1, 1))
+        self.batchnorm2d5 = nn.BatchNorm2d(256)
+        # self.act4 = nn.ReLU()
+        self.conv6 = nn.Conv2d(256, 256, (3,3), stride=(1, 1))
+        self.batchnorm2d6 = nn.BatchNorm2d(256)
+
+        # self.act5 = nn.ReLU()
+        self.fc1 = nn.Linear(256*18*18, 512) # need to change this depending on dataset!
+        self.batchnorm1d1 = nn.BatchNorm1d(512)
+        # self.act6 = nn.ReLU()
+        self.fc2 = nn.Linear(512, 512)
+        self.batchnorm1d2 = nn.BatchNorm1d(512)
+        # self.act7 = nn.ReLU()
+        self.fc_final = nn.Linear(512, 10)
+        self.batchnorm1d_final = nn.BatchNorm1d(10)
+
+        self.act = nn.ReLU()
         self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
-        self.conv2 = nn.Conv2d(256, 512, (3,3), stride=(2, 2))
-        self.fc = nn.Linear(512*7*7, 10)
+
+# Conv64,3,1,
+# BatchNorm,
+# Conv64,3,1,
+# BatchNorm,
+# MaxPool2,
+# Conv128,3,1,
+# BatchNorm,
+# Conv128,3,1,
+# BatchNorm, 
+# MaxPool2,
+# Conv256,3,1,
+# BatchNorm,
+# Conv256,3,1,
+# BatchNorm,
+
+# FConn512,
+# BatchNorm,
+# FConn512,
+# BatchNorm, 
+# FConn10,
+# BatchNorm,
+# SoftMax
 
     # sooo - discovered Keras mis-documented padding=same (https://github.com/keras-team/keras/issues/15703), bc setting stride>1 yields output size diff to input
     # which means output of e.g. conv1 was 14x14 instead of 28x28
@@ -68,29 +110,53 @@ class Teacher(nn.Module):
     # Also, padding='same' only supported for stride=(1,1), in nn.Conv2D
     def forward(self, x):
         # print(x.size())
-        # x = torch.flatten(x, 1) # flatten all dimensions except batch
-        # x = self.fc1(x)
-        # x = self.act1(x)
-        # x = self.fc2(x)
-        # x = self.act2(x)
-        # x = self.fc3(x)
-        # x = self.act3(x)
-        # x = self.fc4(x)
-        # x = self.act4(x)
-        # x = self.fc_final(x)
-        # print(x.size())
-        x = F.pad(x, (1, 1, 1, 1))
+        # x = F.pad(x, (1, 1, 1, 1))
         x = self.conv1(x)
-        x = self.act1(x)
+        x = self.batchnorm2d1(x)
+        x = self.act(x)
         # print(x.size())
-        x = F.pad(x, (1, 0, 1, 0))
+        # x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv2(x)
+        x = self.batchnorm2d2(x)
+        x = self.act(x)
+        # print(x.size())
+        # x = F.pad(x, (1, 0, 1, 0))
         x = self.pool(x)
         # print(x.size())
-        x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv2(x)
+        # x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv3(x)
+        x = self.batchnorm2d3(x)
+        x = self.act(x)
         # print(x.size())
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
-        x = self.fc(x)
+        # x = F.pad(x, (1, 0, 1, 0))
+        x = self.pool(x)
+        # print(x.size())
+        # x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv4(x)
+        x = self.batchnorm2d4(x)
+        x = self.act(x)
+        # print(x.size())
+        # x = F.pad(x, (1, 1, 1, 1))
+        x = self.conv5(x)
+        x = self.batchnorm2d5(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.conv6(x)
+        x = self.batchnorm2d6(x)
+        x = self.act(x)
+        # print(x.size())
+
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = self.batchnorm1d1(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.fc2(x)
+        x = self.batchnorm1d2(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.fc_final(x)
+        x = self.batchnorm1d_final(x)
         return x
     
 
@@ -131,22 +197,22 @@ class Teacher_pl(pl.LightningModule):
       return optimizer
     
 
-class MNISTDataModule(pl.LightningDataModule):
+# class MNISTDataModule(pl.LightningDataModule):
 
-  def setup(self, stage):
-    # transforms for images
-    transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,))])
+#   def setup(self, stage):
+#     # transforms for images
+#     transform=transforms.Compose([transforms.ToTensor(), 
+#                                   transforms.Normalize((0.5,), (0.5,))])
       
-    # prepare transforms standard to MNIST
-    self.mnist_train = MNIST(os.getcwd(), train=True, download=True, transform=transform)
-    self.mnist_test = MNIST(os.getcwd(), train=False, download=True, transform=transform)
+#     # prepare transforms standard to MNIST
+#     self.mnist_train = MNIST(os.getcwd(), train=True, download=True, transform=transform)
+#     self.mnist_test = MNIST(os.getcwd(), train=False, download=True, transform=transform)
 
-  def train_dataloader(self):
-    return DataLoader(self.mnist_train, batch_size=64, num_workers=0)
+#   def train_dataloader(self):
+#     return DataLoader(self.mnist_train, batch_size=64, num_workers=0)
 
-  def test_dataloader(self):
-    return DataLoader(self.mnist_test, batch_size=64, num_workers=0)
+#   def test_dataloader(self):
+#     return DataLoader(self.mnist_test, batch_size=64, num_workers=0)
   
 class CIFAR10DataModule(pl.LightningDataModule):
 
@@ -160,10 +226,10 @@ class CIFAR10DataModule(pl.LightningDataModule):
     self.cifar10_test = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
 
   def train_dataloader(self):
-    return DataLoader(self.cifar10_train, batch_size=32, num_workers=8)
+    return DataLoader(self.cifar10_train, batch_size=32, num_workers=10)
 
   def test_dataloader(self):
-    return DataLoader(self.cifar10_test, batch_size=32, num_workers=8)
+    return DataLoader(self.cifar10_test, batch_size=32, num_workers=10)
 
 ######################################### end N Added ###############################################
 
@@ -232,15 +298,40 @@ configs = {
         "seed": 2,
         "checkpoint": None,
     },
+    # "conv-student": {
+    #     "hidden_layers": {
+    #         "conv": [16, 32],
+    #         "fc": [10],
+    #     },
+    #     "conv_params": {
+    #         "in_height": 28,
+    #         "in_width": 28,
+    #         "in_channels": 1,
+    #         "kernel_height": 3,
+    #         "kernel_width": 3,
+    #     },
+    #     "input_bitwidth": 2,
+    #     "hidden_bitwidth": 2,
+    #     "output_bitwidth": 2,
+    #     "input_fanin": 3,
+    #     "hidden_fanin": 3,
+    #     "output_fanin": 3,
+    #     "weight_decay": 1e-3,
+    #     "batch_size": 64,
+    #     "epochs": 100,
+    #     "learning_rate": 1e-3,
+    #     "seed": 2,
+    #     "checkpoint": None,
+    # },
     "conv-student": {
         "hidden_layers": {
-            "conv": [16, 32],
-            "fc": [10],
+            "conv": [16, 32, 32],
+            "fc": [32, 10],
         },
         "conv_params": {
-            "in_height": 28,
-            "in_width": 28,
-            "in_channels": 1,
+            "in_height": 32,
+            "in_width": 32,
+            "in_channels": 3,
             "kernel_height": 3,
             "kernel_width": 3,
         },
@@ -251,7 +342,7 @@ configs = {
         "hidden_fanin": 3,
         "output_fanin": 3,
         "weight_decay": 1e-3,
-        "batch_size": 64,
+        "batch_size": 32,
         "epochs": 100,
         "learning_rate": 1e-3,
         "seed": 2,
@@ -571,13 +662,21 @@ if __name__ == "__main__":
 
     ########################## start N changed ###########################
 
-    data_module = MNISTDataModule()
+    # data_module = MNISTDataModule()
+    data_module = CIFAR10DataModule()
 
+    # uncomment to train afresh
     # train teacher as pl module
     teacher_model = Teacher_pl() #NOTE this will be passed to train(), but only use its .forward there
     teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
     teacher_trainer.fit(teacher_model, data_module)
     teacher_trainer.test(teacher_model, data_module)
+    teacher_trainer.save_checkpoint("teacher.ckpt")
+
+    # comment out, when training afresh
+    # teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher.ckpt")
+    # teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
+    # teacher_trainer.test(teacher_model, data_module)
 
     # Fetch the datasets
     dataset = {}
@@ -592,12 +691,12 @@ if __name__ == "__main__":
     
     # transforms for images
     transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,))])
+                                  transforms.Normalize((0.5,), (0.5,), (0.5,))])
     
-    # prepare transforms standard to MNIST
-    dataset['train'] = MNIST(os.getcwd(), train=True, download=True, transform=transform)
-    dataset['valid'] = MNIST(os.getcwd(), train=True, download=True, transform=transform)
-    dataset['test'] = MNIST(os.getcwd(), train=False, download=True, transform=transform)
+    # prepare transforms standard to dataset
+    dataset['train'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    dataset['valid'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    dataset['test'] = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
 
     ########################## end N changed ###########################
 
@@ -606,12 +705,12 @@ if __name__ == "__main__":
     # Instantiate model
     x, y = dataset['train'][0]
     # model_cfg['input_length'] = len(x)
-    model_cfg['output_length'] = 10 #10 diff classes in MNIST # N - changed from len(y)
+    model_cfg['output_length'] = 10 # N - changed from len(y)
     model = JetSubstructureConvNeqModel(model_cfg)
     if options_cfg['checkpoint'] is not None:
         print(f"Loading pre-trained checkpoint {options_cfg['checkpoint']}")
         checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
         model.load_state_dict(checkpoint['model_dict'])
 
-    train(model, dataset, train_cfg, options_cfg, teacher_model) # N - added teacher_model arg
+    # train(model, dataset, train_cfg, options_cfg, teacher_model) # N - added teacher_model arg
 
