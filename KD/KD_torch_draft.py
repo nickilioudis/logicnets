@@ -1,3 +1,4 @@
+#@title PyTorch Lightning - CIFAR10
 # PyTorch Lightning
 
 import torch
@@ -8,74 +9,151 @@ from torch.utils.data import DataLoader, random_split
 
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.datasets import MNIST
+from torchvision.datasets import CIFAR10
 
+# !pip install torchmetrics -qqq
 import torchmetrics
 
+# !pip install pytorch_lightning -qqq
 import pytorch_lightning as pl
 import os
+
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 class Teacher(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28*28, 256)
-        self.act1 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc2 = nn.Linear(256, 256)
-        self.act2 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc3 = nn.Linear(256, 256)
-        self.act3 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc4 = nn.Linear(256, 256)
-        self.act4 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc_final = nn.Linear(256, 10)
+        self.conv1 = nn.Conv2d(3, 64, (3,3), stride=(1, 1)) #channel input number also changes with dataset
+        self.batchnorm2d1 = nn.BatchNorm2d(64)
+        self.conv2 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
+        self.batchnorm2d2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 128, (3,3), stride=(1, 1))
+        self.batchnorm2d3 = nn.BatchNorm2d(128)
+        self.conv4 = nn.Conv2d(128, 128, (3,3), stride=(1, 1))
+        self.batchnorm2d4 = nn.BatchNorm2d(128)
+        self.conv5 = nn.Conv2d(128, 256, (3,3), stride=(1, 1))
+        self.batchnorm2d5 = nn.BatchNorm2d(256)
+        self.conv6 = nn.Conv2d(256, 256, (3,3), stride=(1, 1))
+        self.batchnorm2d6 = nn.BatchNorm2d(256)
 
-    # sooo - discovered Keras mis-documented padding=same (https://github.com/keras-team/keras/issues/15703), bc setting stride>1 yields output size diff to input
-    # which means output of e.g. conv1 was 14x14 instead of 28x28
-    # Hence, after looking at model summary of ref KD and checking dimensions, basically did educated trial and error to get padding here in PyTorch Lightning to yield same output sizes at each layer, to compare
-    # Many key points, incl: 'padding' arg of nn.Conv2D does not allow diff left/right or top/bottom padding, only one tuple of (left/right, top/bot), so odd kernel size screws things up
-    # Hence have to use F.pad to explicitly pad left and right, top and bottom separately
-    # Also, padding='same' only supported for stride=(1,1), in nn.Conv2D
+        self.fc1 = nn.Linear(256*18*18, 512) # need to change this depending on dataset!
+        self.batchnorm1d1 = nn.BatchNorm1d(512)
+        self.fc2 = nn.Linear(512, 512)
+        self.batchnorm1d2 = nn.BatchNorm1d(512)
+        self.fc_final = nn.Linear(512, 10)
+        self.batchnorm1d_final = nn.BatchNorm1d(10)
+
+        self.act = nn.ReLU()
+        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
+
     def forward(self, x):
         # print(x.size())
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = self.conv1(x)
+        x = self.batchnorm2d1(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.conv2(x)
+        x = self.batchnorm2d2(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.pool(x)
+        # print(x.size())
+        x = self.conv3(x)
+        x = self.batchnorm2d3(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.pool(x)
+        # print(x.size())
+        x = self.conv4(x)
+        x = self.batchnorm2d4(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.conv5(x)
+        x = self.batchnorm2d5(x)
+        x = self.act(x)
+        # print(x.size())
+        x = self.conv6(x)
+        x = self.batchnorm2d6(x)
+        x = self.act(x)
+        # print(x.size())
+        x = torch.flatten(x, 1)
         x = self.fc1(x)
-        x = self.act1(x)
+        x = self.batchnorm1d1(x)
+        x = self.act(x)
+        # print(x.size())
         x = self.fc2(x)
-        x = self.act2(x)
-        x = self.fc3(x)
-        x = self.act3(x)
-        x = self.fc4(x)
-        x = self.act4(x)
+        x = self.batchnorm1d2(x)
+        x = self.act(x)
+        # print(x.size())
         x = self.fc_final(x)
+        x = self.batchnorm1d_final(x)
         return x
+        
 
-# Output height = (Input height + padding height top + padding height bottom - kernel height) / (stride height) + 1
-# stride_height * (out_height - 1) - in_height + kernel_height = pad_top + pad_bottom  # set out_height=in_height for padding=same
-# 2*(28-1) - 28 + 3 = 29 ; so do pad_top=15, pad_bottom=14; identical for width, so do pad_left=15, pad_right=14
 class Student(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(28*28, 64)
-        self.act1 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc2 = nn.Linear(64, 64)
-        self.act2 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc3 = nn.Linear(64, 64)
-        self.act3 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc4 = nn.Linear(64, 64)
-        self.act4 = nn.LeakyReLU(negative_slope=0.2)
-        self.fc_final = nn.Linear(64, 10)
+
+        self.conv1 = nn.Conv2d(3, 16, (3,3), stride=(1, 1))
+        self.batchnorm2d1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 16, (3,3), stride=(1, 1))
+        self.batchnorm2d2 = nn.BatchNorm2d(16)
+        self.conv3 = nn.Conv2d(16, 32, (3,3), stride=(1, 1))
+        self.batchnorm2d3 = nn.BatchNorm2d(32)
+        self.conv4 = nn.Conv2d(32, 32, (3,3), stride=(1, 1))
+        self.batchnorm2d4 = nn.BatchNorm2d(32)
+        self.conv5 = nn.Conv2d(32, 64, (3,3), stride=(1, 1))
+        self.batchnorm2d5 = nn.BatchNorm2d(64)
+        self.conv6 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
+        self.batchnorm2d6 = nn.BatchNorm2d(64)
+
+        self.fc1 = nn.Linear(64*17*17, 32)
+        self.batchnorm1d1 = nn.BatchNorm1d(32)
+        self.fc2 = nn.Linear(32, 32)
+        self.batchnorm1d2 = nn.BatchNorm1d(32)
+        self.fc_final = nn.Linear(32, 10)
+        self.batchnorm1d_final = nn.BatchNorm1d(10)
+
+        self.act = nn.ReLU()
+        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
 
     def forward(self, x):
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
+
+        x = self.conv1(x)
+        x = self.batchnorm2d1(x)
+        x = self.act(x)
+        x = self.conv2(x)
+        x = self.batchnorm2d2(x)
+        x = self.act(x)
+        x = self.pool(x)
+
+        x = self.conv3(x)
+        x = self.batchnorm2d3(x)
+        x = self.act(x)
+        x = self.conv4(x)
+        x = self.batchnorm2d4(x)
+        x = self.act(x)
+        x = self.pool(x)
+
+        x = self.conv5(x)
+        x = self.batchnorm2d5(x)
+        x = self.act(x)
+        x = self.conv6(x)
+        x = self.batchnorm2d6(x)
+        x = self.act(x)
+        x = self.pool(x)
+
+        x = torch.flatten(x, 1)
         x = self.fc1(x)
-        x = self.act1(x)
+        x = self.batchnorm1d1(x)
+        x = self.act(x)
         x = self.fc2(x)
-        x = self.act2(x)
-        x = self.fc3(x)
-        x = self.act3(x)
-        x = self.fc4(x)
-        x = self.act4(x)
+        x = self.batchnorm1d2(x)
+        x = self.act(x)
         x = self.fc_final(x)
+        x = self.batchnorm1d_final(x)
+
         return x
 
 class Teacher_pl(pl.LightningModule):
@@ -111,7 +189,7 @@ class Teacher_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.teacher.parameters(), lr=1e-3)
+      optimizer = optim.Adam(self.teacher.parameters(), lr=5e-5)
       return optimizer
 
 
@@ -134,7 +212,7 @@ class Distiller_pl(pl.LightningModule):
     def total_loss(self, teacher_predictions, student_predictions, labels):
       distillation_criterion = nn.KLDivLoss()
       alpha=0.1
-      temperature=10
+      temperature=1
       student_loss = self.student_loss(student_predictions, labels)
       distillation_loss = (
           distillation_criterion(
@@ -164,43 +242,55 @@ class Distiller_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.student.parameters(), lr=1e-3)
+      optimizer = optim.Adam(self.student.parameters(), lr=5e-5)
       return optimizer
 
 
-class MNISTDataModule(pl.LightningDataModule):
+class CIFAR10DataModule(pl.LightningDataModule):
 
   def setup(self, stage):
     # transforms for images
     transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,))])
+                                  transforms.Normalize((0.5,), (0.5,), (0.5,))])
       
     # prepare transforms standard to MNIST
-    self.mnist_train = MNIST(os.getcwd(), train=True, download=True, transform=transform)
-    self.mnist_test = MNIST(os.getcwd(), train=False, download=True, transform=transform)
+    self.cifar10_train = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    self.cifar10_test = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
 
   def train_dataloader(self):
-    return DataLoader(self.mnist_train, batch_size=64, num_workers=10)
+    return DataLoader(self.cifar10_train, batch_size=64, num_workers=10)
 
   def test_dataloader(self):
-    return DataLoader(self.mnist_test, batch_size=64, num_workers=10)
+    return DataLoader(self.cifar10_test, batch_size=64, num_workers=10)
 
+data_module = CIFAR10DataModule()
 
-if __name__ == "__main__":
+early_stop_callback = EarlyStopping(
+   monitor='train_acc',
+   min_delta=0.005,
+   patience=3,
+   verbose=False,
+   mode='max'
+)
 
-  data_module = MNISTDataModule()
+# run 200 epochs with lr 5e-5 w Adam, read JADE documentation, use FLOP count tool to get count for resnet50 and CNV - can use 
 
-  # train teacher
-  teacher_model = Teacher_pl()
-  teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
-  teacher_trainer.fit(teacher_model, data_module)
-  teacher_trainer.test(teacher_model, data_module)
+# train teacher
+teacher_model = Teacher_pl()
+teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=200)
+teacher_trainer.fit(teacher_model, data_module)
+teacher_trainer.test(teacher_model, data_module)
+teacher_trainer.save_checkpoint("teacher.ckpt")
 
-  # distill to student
-  distiller_model = Distiller_pl()
-  distiller_trainer = pl.Trainer(accelerator="auto", max_epochs=3)
-  distiller_trainer.fit(distiller_model, data_module)
-  distiller_trainer.test(distiller_model, data_module)
+# teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher.ckpt")
+# teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=20)
+# teacher_trainer.test(teacher_model, data_module)
+
+# distill to student
+distiller_model = Distiller_pl()
+distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=20, callbacks=[early_stop_callback])
+distiller_trainer.fit(distiller_model, data_module)
+distiller_trainer.test(distiller_model, data_module)
 
 # Can clearly see, if comment out teacher_trainer.fit, test accuracy becomes ~0.1 (i.e. basically random for 10 classes). But if train distillation, still get good test accuracy
 # This is because student_loss still taken into account to train; setting alpha=0.0 (i.e. only distillation loss considered) and then training distiller results in ~0.1 test accuracy of student, as expected, if teacher untrained    
