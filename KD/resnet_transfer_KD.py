@@ -20,8 +20,7 @@ import os
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
-# put cifar10_models dir (with state_dict folder that has weights) in same dir as this script; can select model and weights file from just one arch if want
-from cifar10_models.mobilenetv2 import mobilenet_v2
+from torchvision.models import resnet50, ResNet50_Weights
 
 import functools
 
@@ -146,8 +145,6 @@ class Teacher(nn.Module):
     def __init__(self):
         super().__init__()
 
-        ######### CNV arch #######
-
         # self.conv1 = nn.Conv2d(3, 64, (3,3), stride=(1, 1)) #channel input number also changes with dataset
         # self.batchnorm2d1 = nn.BatchNorm2d(64)
         # self.conv_dropout1 = nn.Dropout(p=0.1)
@@ -183,9 +180,6 @@ class Teacher(nn.Module):
         # self.act = nn.ReLU()
         # self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-
-        ######### cifarnet arch #######
-
         self.conv1 = Conv2dSame(3, 64, 3, stride=(1, 1)) #channel input number also changes with dataset
         self.batchnorm2d1 = nn.BatchNorm2d(64)
         self.conv2 = Conv2dSame(64, 64, 3, stride=(1, 1))
@@ -215,8 +209,6 @@ class Teacher(nn.Module):
         self.pool_alt = nn.AdaptiveMaxPool2d(1)
 
     def forward(self, x):
-
-        ######### cifarnet arch #######
 
         # print(x.size())
         x = self.conv1(x)
@@ -266,9 +258,6 @@ class Teacher(nn.Module):
         x = self.batchnorm1d_final(x)
 
         return x
-
-
-        ######### CNV arch #######
 
         # x = self.conv1(x)
         # x = self.batchnorm2d1(x)
@@ -382,12 +371,19 @@ class Student(nn.Module):
 
         return x
 
+
+resnet = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+for param in resnet.parameters():
+   param.requires_grad = False
+num_ftrs = resnet.fc.in_features
+resnet.fc = nn.Linear(num_ftrs, 10)
+
 class Teacher_pl(pl.LightningModule):
     def __init__(self):
         super().__init__()
-        # self.teacher = Teacher(num_classes=10) # when using Teacher based on skeleton (one that extends ModelBase)
-        self.teacher = Teacher() # to use og teacher arch defined above
-        # self.teacher = mobilenet_v2(pretrained=True) # to use pre-trained other arch
+        # self.teacher = Teacher(num_classes=10)
+        # self.teacher = Teacher()
+        self.teacher = resnet
         self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
         self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
@@ -417,14 +413,15 @@ class Teacher_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.teacher.parameters(), lr=1e-3)
+      # optimizer = optim.Adam(self.teacher.parameters(), lr=5e-5)
+      optimizer = optim.Adam(self.teacher.fc.parameters(), lr=1e-3)
       return optimizer
 
 
 class Distiller_pl(pl.LightningModule):
-    def __init__(self, trained_teacher):
+    def __init__(self):
         super().__init__()
-        self.teacher = trained_teacher
+        self.teacher = Teacher()
         self.student = Student()
         self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
         self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
@@ -440,7 +437,7 @@ class Distiller_pl(pl.LightningModule):
     def total_loss(self, teacher_predictions, student_predictions, labels):
       distillation_criterion = nn.KLDivLoss()
       alpha=0.1
-      temperature=10
+      temperature=1
       student_loss = self.student_loss(student_predictions, labels)
       distillation_loss = (
           distillation_criterion(
@@ -470,7 +467,7 @@ class Distiller_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.student.parameters(), lr=1e-3)
+      optimizer = optim.Adam(self.student.parameters(), lr=5e-5)
       return optimizer
 
 
@@ -478,7 +475,11 @@ class CIFAR10DataModule(pl.LightningDataModule):
 
   def setup(self, stage):
     # transforms for images
-    transform=transforms.Compose([transforms.ToTensor(), 
+    # transform=transforms.Compose([transforms.ToTensor(), 
+    #                               transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+    transform=transforms.Compose([transforms.Resize((224,224)),
+                                  transforms.AutoAugment(policy=transforms.AutoAugmentPolicy.CIFAR10),
+                                  transforms.ToTensor(),
                                   transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
       
     # prepare standard transforms
@@ -503,33 +504,22 @@ early_stop_callback = EarlyStopping(
 
 # run 200 epochs with lr 5e-5 w Adam, read JADE documentation, use FLOP count tool to get count for resnet50 and CNV - can use 
 
-# uncomment when training teacher from scratch
 # train teacher
-# teacher_model = Teacher_pl()
-# teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
-# teacher_trainer.fit(teacher_model, data_module)
-# teacher_trainer.test(teacher_model, data_module)
-# teacher_trainer.save_checkpoint("teacher_cifarnet.ckpt")
-
-# uncomment when using-pretrained other arch
-# teacher_model = Teacher_pl()
-# teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
-# # teacher_trainer.fit(teacher_model, data_module)
-# teacher_trainer.test(teacher_model, data_module)
-# teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
-
-# uncomment when using checkpoint from arch defined here already trained
-teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_cifarnet.ckpt")
-teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=200)
+teacher_model = Teacher_pl()
+teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=5)
+teacher_trainer.fit(teacher_model, data_module)
 teacher_trainer.test(teacher_model, data_module)
+teacher_trainer.save_checkpoint("teacher_resnet.ckpt")
 
-trained_teacher=teacher_model
+# teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher.ckpt")
+# teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=20)
+# teacher_trainer.test(teacher_model, data_module)
 
 # distill to student
-distiller_model = Distiller_pl(trained_teacher)
-distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10) #callbacks=[early_stop_callback]
-distiller_trainer.fit(distiller_model, data_module)
-distiller_trainer.test(distiller_model, data_module)
+# distiller_model = Distiller_pl()
+# distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=20, callbacks=[early_stop_callback])
+# distiller_trainer.fit(distiller_model, data_module)
+# distiller_trainer.test(distiller_model, data_module)
 
 # Can clearly see, if comment out teacher_trainer.fit, test accuracy becomes ~0.1 (i.e. basically random for 10 classes). But if train distillation, still get good test accuracy
 # This is because student_loss still taken into account to train; setting alpha=0.0 (i.e. only distillation loss considered) and then training distiller results in ~0.1 test accuracy of student, as expected, if teacher untrained    
