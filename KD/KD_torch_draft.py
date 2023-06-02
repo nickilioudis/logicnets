@@ -318,31 +318,79 @@ class Teacher(nn.Module):
         
 
 class Student(nn.Module):
+
+    # def __init__(self):
+
+    #       super().__init__()
+    #       self.num_channels = 32
+
+    #       self.conv1 = nn.Conv2d(3, self.num_channels, 3, stride=1, padding=1)
+    #       self.bn1 = nn.BatchNorm2d(self.num_channels)
+    #       self.conv2 = nn.Conv2d(self.num_channels, self.num_channels*2, 3, stride=1, padding=1)
+    #       self.bn2 = nn.BatchNorm2d(self.num_channels*2)
+    #       self.conv3 = nn.Conv2d(self.num_channels*2, self.num_channels*4, 3, stride=1, padding=1)
+    #       self.bn3 = nn.BatchNorm2d(self.num_channels*4)
+
+    #       self.fc1 = nn.Linear(4*4*self.num_channels*4, self.num_channels*4)
+    #       self.fcbn1 = nn.BatchNorm1d(self.num_channels*4)
+    #       self.fc2 = nn.Linear(self.num_channels*4, 10)       
+    #       self.dropout_rate = 0.5
+
+    #       self.act = nn.ReLU()
+    #       self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+    #       self.dropout = nn.Dropout(p=0.5)
+
+    # def forward(self, s):
+    #     #                                                  -> batch_size x 3 x 32 x 32
+    #     # we apply the convolution layers, followed by batch normalisation, maxpool and relu x 3
+    #     s = self.bn1(self.conv1(s))                         # batch_size x num_channels x 32 x 32
+    #     s = self.act(self.pool(s))                      # batch_size x num_channels x 16 x 16
+    #     s = self.bn2(self.conv2(s))                         # batch_size x num_channels*2 x 16 x 16
+    #     s = self.act(self.pool(s))                      # batch_size x num_channels*2 x 8 x 8
+    #     s = self.bn3(self.conv3(s))                         # batch_size x num_channels*4 x 8 x 8
+    #     s = self.act(self.pool(s))                      # batch_size x num_channels*4 x 4 x 4
+
+    #     # flatten the output for each image
+    #     s = s.view(-1, 4*4*self.num_channels*4)             # batch_size x 4*4*num_channels*4
+
+    #     # apply 2 fully connected layers with dropout
+    #     s = self.dropout(self.act(self.fcbn1(self.fc1(s))))    # batch_size x self.num_channels*4
+    #     s = self.fc2(s)                                     # batch_size x 10
+
+    #     return s
+        
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(3, 16, (3,3), stride=(1, 1))
-        self.batchnorm2d1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 16, (3,3), stride=(1, 1))
-        self.batchnorm2d2 = nn.BatchNorm2d(16)
-        self.conv3 = nn.Conv2d(16, 32, (3,3), stride=(1, 1))
-        self.batchnorm2d3 = nn.BatchNorm2d(32)
-        self.conv4 = nn.Conv2d(32, 32, (3,3), stride=(1, 1))
-        self.batchnorm2d4 = nn.BatchNorm2d(32)
-        self.conv5 = nn.Conv2d(32, 64, (3,3), stride=(1, 1))
-        self.batchnorm2d5 = nn.BatchNorm2d(64)
-        self.conv6 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
-        self.batchnorm2d6 = nn.BatchNorm2d(64)
+        self.num_channels = 32
 
-        self.fc1 = nn.Linear(64*17*17, 32)
-        self.batchnorm1d1 = nn.BatchNorm1d(32)
-        self.fc2 = nn.Linear(32, 32)
-        self.batchnorm1d2 = nn.BatchNorm1d(32)
-        self.fc_final = nn.Linear(32, 10)
+        self.conv1 = Conv2dSame(3, self.num_channels, 3, stride=(1, 1)) #channel input number also changes with dataset
+        self.batchnorm2d1 = nn.BatchNorm2d(self.num_channels)
+        self.conv2 = Conv2dSame(self.num_channels, self.num_channels, 3, stride=(1, 1))
+        self.batchnorm2d2 = nn.BatchNorm2d(self.num_channels)
+
+        self.conv3 = Conv2dSame(self.num_channels, self.num_channels*2, 3, stride=(1, 1))
+        self.batchnorm2d3 = nn.BatchNorm2d(self.num_channels*2)
+        self.conv4 = Conv2dSame(self.num_channels*2, self.num_channels*2, 3, stride=(1, 1))
+        self.batchnorm2d4 = nn.BatchNorm2d(self.num_channels*2)
+        # self.conv_dropout4 = nn.Dropout(p=0.5)
+        self.conv5 = Conv2dSame(self.num_channels*2, self.num_channels*2, 3, stride=(1, 1))
+        self.batchnorm2d5 = nn.BatchNorm2d(self.num_channels*2)
+
+        self.conv6 = Conv2dSame(self.num_channels*2, self.num_channels*3, 3, stride=(1, 1))
+        self.batchnorm2d6 = nn.BatchNorm2d(self.num_channels*3)
+        self.conv7 = Conv2dSame(self.num_channels*3, self.num_channels*3, 3, stride=(1, 1))
+        self.batchnorm2d7 = nn.BatchNorm2d(self.num_channels*3)
+        # self.conv_dropout7 = nn.Dropout(p=0.5)
+        self.conv8 = Conv2dSame(self.num_channels*3, self.num_channels*3, 3, stride=(1, 1))
+        self.batchnorm2d8 = nn.BatchNorm2d(self.num_channels*3)
+        
+        self.fc_final = nn.Linear(self.num_channels*3*1*1, 10)
         self.batchnorm1d_final = nn.BatchNorm1d(10)
 
         self.act = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
+        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+        self.pool_alt = nn.AdaptiveMaxPool2d(1)
 
     def forward(self, x):
 
@@ -352,31 +400,37 @@ class Student(nn.Module):
         x = self.conv2(x)
         x = self.batchnorm2d2(x)
         x = self.act(x)
-        x = self.pool(x)
-
         x = self.conv3(x)
         x = self.batchnorm2d3(x)
         x = self.act(x)
+
+        x = self.pool(x)
+
         x = self.conv4(x)
         x = self.batchnorm2d4(x)
         x = self.act(x)
-        x = self.pool(x)
-
+        # x = self.conv_dropout4(x)
         x = self.conv5(x)
         x = self.batchnorm2d5(x)
         x = self.act(x)
         x = self.conv6(x)
         x = self.batchnorm2d6(x)
         x = self.act(x)
+
         x = self.pool(x)
 
+        x = self.conv7(x)
+        x = self.batchnorm2d7(x)
+        x = self.act(x)
+        # x = self.conv_dropout7(x)
+        x = self.conv8(x)
+        x = self.batchnorm2d8(x)
+        x = self.act(x)
+
+        x = self.pool_alt(x)
+
         x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = self.batchnorm1d1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        x = self.batchnorm1d2(x)
-        x = self.act(x)
+
         x = self.fc_final(x)
         x = self.batchnorm1d_final(x)
 
@@ -386,13 +440,13 @@ class Teacher_pl(pl.LightningModule):
     def __init__(self):
         super().__init__()
         # self.teacher = Teacher(num_classes=10) # when using Teacher based on skeleton (one that extends ModelBase)
-        self.teacher = Teacher() # to use og teacher arch defined above
-        # self.teacher = mobilenet_v2(pretrained=True) # to use pre-trained other arch
+        # self.teacher = Teacher() # to use og teacher arch defined above
+        self.teacher = mobilenet_v2(pretrained=True) # to use pre-trained other arch
         self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
         self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
     def forward(self, x):
-        return self.teacher.forward(x)
+        return self.teacher(x)
 
     def teacher_loss(self, teacher_predictions, labels):
       criterion = nn.CrossEntropyLoss()
@@ -425,12 +479,14 @@ class Distiller_pl(pl.LightningModule):
     def __init__(self, trained_teacher):
         super().__init__()
         self.teacher = trained_teacher
+        for param in self.teacher.parameters():
+          param.requires_grad = False
         self.student = Student()
         self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
         self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
     def forward(self, x): # what happens if don't define this? Where is in called under the hood?
-        return self.student.forward(x)
+        return self.student(x)
 
     def student_loss(self, student_predictions, labels):
       criterion = nn.CrossEntropyLoss()
@@ -444,12 +500,14 @@ class Distiller_pl(pl.LightningModule):
       student_loss = self.student_loss(student_predictions, labels)
       distillation_loss = (
           distillation_criterion(
-              torch.nn.functional.softmax(teacher_predictions / temperature, dim=1),
-              torch.nn.functional.softmax(student_predictions / temperature, dim=1),
+              torch.nn.functional.log_softmax(student_predictions / temperature, dim=1),
+              torch.nn.functional.softmax(teacher_predictions / temperature, dim=1)
           )
-          * temperature**2
+          *temperature*temperature
       )
-      return alpha*student_loss + (1-alpha)*distillation_loss
+      # print("student loss:", student_loss.item())
+      # print("distillation loss:", distillation_loss.item())
+      return alpha*student_loss + (1 -alpha)*distillation_loss
 
     def training_step(self, train_batch, batch_idx):
       data, labels = train_batch
@@ -470,7 +528,7 @@ class Distiller_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.student.parameters(), lr=1e-3)
+      optimizer = optim.Adam(self.student.parameters(), lr=5e-4)
       return optimizer
 
 
@@ -478,8 +536,10 @@ class CIFAR10DataModule(pl.LightningDataModule):
 
   def setup(self, stage):
     # transforms for images
+    mean = [0.4914, 0.4822, 0.4465]
+    std = [0.2471, 0.2435, 0.2616]
     transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+                                  transforms.Normalize(mean, std)])
       
     # prepare standard transforms
     self.cifar10_train = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
@@ -512,24 +572,23 @@ early_stop_callback = EarlyStopping(
 # teacher_trainer.save_checkpoint("teacher_cifarnet.ckpt")
 
 # uncomment when using-pretrained other arch
-# teacher_model = Teacher_pl()
-# teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
-# # teacher_trainer.fit(teacher_model, data_module)
-# teacher_trainer.test(teacher_model, data_module)
-# teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
+teacher_model = Teacher_pl()
+teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+# teacher_trainer.fit(teacher_model, data_module)
+teacher_trainer.test(teacher_model, data_module)
+teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
 
 # uncomment when using checkpoint from arch defined here already trained
-teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_cifarnet.ckpt")
-teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=200)
-teacher_trainer.test(teacher_model, data_module)
-
-trained_teacher=teacher_model
+# teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_cifarnet.ckpt")
+# teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=200)
+# teacher_trainer.test(teacher_model, data_module)
 
 # distill to student
-distiller_model = Distiller_pl(trained_teacher)
-distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10) #callbacks=[early_stop_callback]
+distiller_model = Distiller_pl(teacher_model)
+distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=200) #callbacks=[early_stop_callback]
 distiller_trainer.fit(distiller_model, data_module)
 distiller_trainer.test(distiller_model, data_module)
+# distiller_trainer.save_checkpoint("distilled.ckpt")
 
 # Can clearly see, if comment out teacher_trainer.fit, test accuracy becomes ~0.1 (i.e. basically random for 10 classes). But if train distillation, still get good test accuracy
 # This is because student_loss still taken into account to train; setting alpha=0.0 (i.e. only distillation loss considered) and then training distiller results in ~0.1 test accuracy of student, as expected, if teacher untrained    
