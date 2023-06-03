@@ -1,15 +1,16 @@
 #@title PyTorch Lightning - CIFAR10
 # PyTorch Lightning
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
+# from torch.utils.data.sampler import SubsetRandomSampler
 
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, CIFAR100
 
 !pip install torchmetrics -qqq
 import torchmetrics
@@ -108,81 +109,9 @@ class ModelBase(nn.Module):
         # macs, params = profile(self, inputs=(inputs, ))
 
 
-# class Teacher(ModelBase):
-#     name = 'cifarnet'
-#     filters = [64, 64, 128, 128, 128, 192, 192, 192]
-#     kernels = [3, 3, 3, 3, 3, 3, 3, 3]
-#     strides = [1, 1, 2, 1, 1, 2, 1, 1]
-#     dropout = [False, False, False, True, False, False, True, False]
-
-#     def __init__(self, num_classes):
-#         super().__init__(num_classes)
-#         inputs = 3
-#         iterer = zip(self.kernels, self.filters, self.strides, self.dropout)
-#         outputs = None
-#         layers = []
-#         for k, outputs, stride, dropout in iterer:
-#             layers += [
-#                 Conv2dSame(inputs, outputs, k, stride, bias=False),
-#                 BatchNorm2d(outputs),
-#                 nn.ReLU(inplace=False),
-#             ]
-#             if dropout:
-#                 layers.append(nn.Dropout(p=0.5))
-#             inputs = outputs
-#         self.layers = Sequential(*layers)
-#         # classifier
-#         self.pool = nn.AdaptiveAvgPool2d(1)
-#         self.fc = nn.Linear(outputs, num_classes)
-
-#     def forward(self, x):
-#         extracted = self.layers(x)
-#         if isinstance(extracted, tuple):
-#             extracted, _ = extracted
-#         pooled = self.pool(extracted)
-#         return self.fc(pooled.squeeze(-1).squeeze(-1))
-
 class Teacher(nn.Module):
     def __init__(self):
         super().__init__()
-
-        ######### CNV arch #######
-
-        # self.conv1 = nn.Conv2d(3, 64, (3,3), stride=(1, 1)) #channel input number also changes with dataset
-        # self.batchnorm2d1 = nn.BatchNorm2d(64)
-        # self.conv_dropout1 = nn.Dropout(p=0.1)
-        # self.conv2 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
-        # self.batchnorm2d2 = nn.BatchNorm2d(64)
-        # self.conv_dropout2 = nn.Dropout(p=0.1)
-
-        # self.conv3 = nn.Conv2d(64, 128, (3,3), stride=(1, 1))
-        # self.batchnorm2d3 = nn.BatchNorm2d(128)
-        # self.conv_dropout3 = nn.Dropout(p=0.2)
-        # self.conv4 = nn.Conv2d(128, 128, (3,3), stride=(1, 1))
-        # self.batchnorm2d4 = nn.BatchNorm2d(128)
-        # self.conv_dropout4 = nn.Dropout(p=0.2)
-
-        # self.conv5 = nn.Conv2d(128, 256, (3,3), stride=(1, 1))
-        # self.batchnorm2d5 = nn.BatchNorm2d(256)
-        # self.conv_dropout5 = nn.Dropout(p=0.3)
-        # self.conv6 = nn.Conv2d(256, 256, (3,3), stride=(1, 1))
-        # self.batchnorm2d6 = nn.BatchNorm2d(256)
-        # self.conv_dropout6 = nn.Dropout(p=0.3)
-
-        # self.fc1 = nn.Linear(256*1*1, 512) # need to change this depending on dataset!
-        # self.batchnorm1d1 = nn.BatchNorm1d(512)
-        # self.fc_dropout1 = nn.Dropout(p=0.8)
-        # self.fc2 = nn.Linear(512, 512)
-        # self.batchnorm1d2 = nn.BatchNorm1d(512)
-        # self.fc_dropout2 = nn.Dropout(p=0.8)
-        
-        # self.fc_final = nn.Linear(512, 10)
-        # self.batchnorm1d_final = nn.BatchNorm1d(10)
-        # self.fc_dropout_final = nn.Dropout(p=0.5)
-
-        # self.act = nn.ReLU()
-        # self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-
 
         ######### cifarnet arch #######
 
@@ -268,96 +197,9 @@ class Teacher(nn.Module):
         return x
 
 
-        ######### CNV arch #######
-
-        # x = self.conv1(x)
-        # x = self.batchnorm2d1(x)
-        # x = self.act(x)
-        # x = self.conv_dropout1(x)
-        # x = self.conv2(x)
-        # x = self.batchnorm2d2(x)
-        # x = self.act(x)
-        # x = self.conv_dropout2(x)
-        # x = self.pool(x)
-
-        # x = self.conv3(x)
-        # x = self.batchnorm2d3(x)
-        # x = self.act(x)
-        # x = self.conv_dropout3(x)
-        # x = self.conv4(x)
-        # x = self.batchnorm2d4(x)
-        # x = self.act(x)
-        # x = self.conv_dropout4(x)
-        # x = self.pool(x)
-
-        # x = self.conv5(x)
-        # x = self.batchnorm2d5(x)
-        # x = self.act(x)
-        # x = self.conv_dropout5(x)
-        # x = self.conv6(x)
-        # x = self.batchnorm2d6(x)
-        # x = self.act(x)
-        # x = self.conv_dropout6(x)
-
-        # x = torch.flatten(x, 1)
-        # x = self.fc1(x)
-        # x = self.batchnorm1d1(x)
-        # x = self.act(x)
-        # x = self.fc_dropout1(x)
-
-        # x = self.fc2(x)
-        # x = self.batchnorm1d2(x)
-        # x = self.act(x)
-        # x = self.fc_dropout2(x)
-
-        # x = self.fc_final(x)
-        # x = self.batchnorm1d_final(x)
-        # x = self.fc_dropout_final(x)
-
-        # return x
         
 
 class Student(nn.Module):
-
-    # def __init__(self):
-
-    #       super().__init__()
-    #       self.num_channels = 32
-
-    #       self.conv1 = nn.Conv2d(3, self.num_channels, 3, stride=1, padding=1)
-    #       self.bn1 = nn.BatchNorm2d(self.num_channels)
-    #       self.conv2 = nn.Conv2d(self.num_channels, self.num_channels*2, 3, stride=1, padding=1)
-    #       self.bn2 = nn.BatchNorm2d(self.num_channels*2)
-    #       self.conv3 = nn.Conv2d(self.num_channels*2, self.num_channels*4, 3, stride=1, padding=1)
-    #       self.bn3 = nn.BatchNorm2d(self.num_channels*4)
-
-    #       self.fc1 = nn.Linear(4*4*self.num_channels*4, self.num_channels*4)
-    #       self.fcbn1 = nn.BatchNorm1d(self.num_channels*4)
-    #       self.fc2 = nn.Linear(self.num_channels*4, 10)       
-    #       self.dropout_rate = 0.5
-
-    #       self.act = nn.ReLU()
-    #       self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-    #       self.dropout = nn.Dropout(p=0.5)
-
-    # def forward(self, s):
-    #     #                                                  -> batch_size x 3 x 32 x 32
-    #     # we apply the convolution layers, followed by batch normalisation, maxpool and relu x 3
-    #     s = self.bn1(self.conv1(s))                         # batch_size x num_channels x 32 x 32
-    #     s = self.act(self.pool(s))                      # batch_size x num_channels x 16 x 16
-    #     s = self.bn2(self.conv2(s))                         # batch_size x num_channels*2 x 16 x 16
-    #     s = self.act(self.pool(s))                      # batch_size x num_channels*2 x 8 x 8
-    #     s = self.bn3(self.conv3(s))                         # batch_size x num_channels*4 x 8 x 8
-    #     s = self.act(self.pool(s))                      # batch_size x num_channels*4 x 4 x 4
-
-    #     # flatten the output for each image
-    #     s = s.view(-1, 4*4*self.num_channels*4)             # batch_size x 4*4*num_channels*4
-
-    #     # apply 2 fully connected layers with dropout
-    #     s = self.dropout(self.act(self.fcbn1(self.fc1(s))))    # batch_size x self.num_channels*4
-    #     s = self.fc2(s)                                     # batch_size x 10
-
-    #     return s
         
     def __init__(self):
         super().__init__()
@@ -442,6 +284,8 @@ class Teacher_pl(pl.LightningModule):
         # self.teacher = Teacher(num_classes=10) # when using Teacher based on skeleton (one that extends ModelBase)
         # self.teacher = Teacher() # to use og teacher arch defined above
         self.teacher = mobilenet_v2(pretrained=True) # to use pre-trained other arch
+        # self.teacher = torch.load('group22_pretrained_model.h5')
+        # self.teacher = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_mobilenetv2_x1_4", pretrained=True)
         self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
         self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
@@ -528,7 +372,7 @@ class Distiller_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.student.parameters(), lr=5e-4)
+      optimizer = optim.Adam(self.student.parameters(), lr=1e-3)
       return optimizer
 
 
@@ -551,7 +395,83 @@ class CIFAR10DataModule(pl.LightningDataModule):
   def test_dataloader(self):
     return DataLoader(self.cifar10_test, batch_size=64, num_workers=10)
 
-data_module = CIFAR10DataModule()
+
+class CIFAR100DataModule(pl.LightningDataModule):
+
+  def setup(self, stage):
+    # transforms for images
+    mean = [0.507, 0.4865, 0.4409]
+    std = [0.2673, 0.2564, 0.2761]
+    transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize(mean, std)])
+      
+    # prepare standard transforms
+    self.cifar100_train = CIFAR100(os.getcwd(), train=True, download=True, transform=transform)
+    self.cifar100_test = CIFAR100(os.getcwd(), train=False, download=True, transform=transform)
+
+  def train_dataloader(self):
+    return DataLoader(self.cifar100_train, batch_size=64, num_workers=10)
+
+  def test_dataloader(self):
+    return DataLoader(self.cifar100_test, batch_size=64, num_workers=10)
+
+
+class CIFAR10FSLDataModule(pl.LightningDataModule):
+
+  def setup(self, stage):
+    # transforms for images
+    mean = [0.4914, 0.4822, 0.4465]
+    std = [0.2471, 0.2435, 0.2616]
+    transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize(mean, std)])
+      
+    # prepare standard transforms
+    self.cifar10fsl_train = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    # self.train_sampler = self._create_random_subset_sampler( CIFAR10(os.getcwd(), train=True, download=True, transform=transform) )
+    self.cifar10fsl_test = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
+
+  # def _create_random_subset_sampler(self, dataset):
+  #   data_per_class_index = [[] for _ in range(10)] # each elem is array of data samples that belong to that class
+  #   for datum_idx, (_, label) in enumerate(dataset):
+  #     class_idx = label
+  #     data_per_class_index[class_idx].append(datum_idx)
+  #   subset_indices = []
+  #   # print(class_indices)
+  #   for class_index_samples in data_per_class_index:
+  #     subset_indices.extend(torch.randperm(len(class_index_samples))[:5])
+  #   # print(subset_indices)
+  #   return SubsetRandomSampler(subset_indices) 
+
+  # def train_dataloader(self):
+  #   return DataLoader(self.cifar10fsl_train, batch_size=64, num_workers=10, sampler=self.train_sampler)
+
+  def train_dataloader(self):
+    class_data_indices = [[] for _ in range(10)] # each elem is list of data samples that belong to that class
+    for datum_idx, (_, label) in enumerate(self.cifar10fsl_train): # assign id to every sample in dataset; iterate through, and append the ids of sample belonging to the same class to our new 2D list
+        class_idx = label
+        class_data_indices[class_idx].append(datum_idx)
+
+    fsl_data_indices = [] # indices of data samples that will be part of the new fsl subset of the dataset
+
+    # for each class, randomly pick 5 data samples and append their ids to fsl data indices list
+    for class_ in class_data_indices:
+      rand_indices = (torch.randperm(len(class_))[:5]).tolist() # returns first 5 of a random permutation of all digits up to length of class (i.e. num of data samples in that class); tolist bc returns tensor
+      print(rand_indices)
+      for rand_index in rand_indices:
+        fsl_data_indices.append(class_[rand_index])
+    print(fsl_data_indices)
+
+    # uses fsl indices to create subset of full train set
+    fsl_dataset = torch.utils.data.Subset(self.cifar10fsl_train, fsl_data_indices)
+    return DataLoader(fsl_dataset, batch_size=64, num_workers=10, shuffle=True)
+
+  def test_dataloader(self):
+    return DataLoader(self.cifar10fsl_test, batch_size=64, num_workers=10)
+
+
+# data_module = CIFAR10DataModule()
+# data_module = CIFAR100DataModule()
+data_module = CIFAR10FSLDataModule()
 
 early_stop_callback = EarlyStopping(
    monitor='train_acc',
@@ -574,9 +494,9 @@ early_stop_callback = EarlyStopping(
 # uncomment when using-pretrained other arch
 teacher_model = Teacher_pl()
 teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
-# teacher_trainer.fit(teacher_model, data_module)
 teacher_trainer.test(teacher_model, data_module)
-teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
+# # teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
+# # teacher_trainer.save_checkpoint("teacher_cifar100.ckpt")
 
 # uncomment when using checkpoint from arch defined here already trained
 # teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_cifarnet.ckpt")
@@ -584,10 +504,10 @@ teacher_trainer.save_checkpoint("teacher_mobilenetv2.ckpt")
 # teacher_trainer.test(teacher_model, data_module)
 
 # distill to student
-distiller_model = Distiller_pl(teacher_model)
-distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=200) #callbacks=[early_stop_callback]
-distiller_trainer.fit(distiller_model, data_module)
-distiller_trainer.test(distiller_model, data_module)
+# distiller_model = Distiller_pl(teacher_model)
+# distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10) #callbacks=[early_stop_callback]
+# distiller_trainer.fit(distiller_model, data_module)
+# distiller_trainer.test(distiller_model, data_module)
 # distiller_trainer.save_checkpoint("distilled.ckpt")
 
 # Can clearly see, if comment out teacher_trainer.fit, test accuracy becomes ~0.1 (i.e. basically random for 10 classes). But if train distillation, still get good test accuracy
