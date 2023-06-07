@@ -100,7 +100,8 @@ class SparseLinear(nn.Linear):
         self.mask = mask
 
     def forward(self, input: Tensor) -> Tensor:
-        return F.linear(input, self.weight*self.mask(), self.bias)
+        # return F.linear(input, self.weight*self.mask(), self.bias) # N - changed, CHANGE BACK
+        return F.linear(input, self.weight, self.bias)
 
 # TODO: Perhaps make this two classes, separating the LUT and NEQ code.
 class SparseLinearNeq(nn.Module):
@@ -289,7 +290,8 @@ class SparseConv(nn.Conv2d):
         # self.masked_weight = torch.reshape( torch.flatten(self.weight,start_dim=1) * self.mask() , self.weight.size() )
 
     def forward(self, input: Tensor) -> Tensor:
-        return F.conv2d(input=input, weight=torch.reshape( torch.flatten(self.weight,start_dim=1) * self.mask() , self.weight.size() ), bias=self.bias, stride=self.stride, padding=self.padding) # rmmbr; weights are trainable, so need to use same var, not e.g. introduce weight_flat
+        # return F.conv2d(input=input, weight=torch.reshape( torch.flatten(self.weight,start_dim=1) * self.mask() , self.weight.size() ), bias=self.bias, stride=self.stride, padding=self.padding) # rmmbr; weights are trainable, so need to use same var, not e.g. introduce weight_flat
+        return F.conv2d(input=input, weight=self.weight, bias=self.bias, stride=self.stride, padding=self.padding) # rmmbr; weights are trainable, so need to use same var, not e.g. introduce weight_flat
  
 # TODO: Perhaps make this two classes, separating the LUT and NEQ code.
 class SparseConvNeq(nn.Module):

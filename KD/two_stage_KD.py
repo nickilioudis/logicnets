@@ -11,17 +11,17 @@ import torchvision
 import torchvision.transforms as transforms
 from torchvision.datasets import CIFAR10, CIFAR100
 
-# !pip install torchmetrics -qqq
+!pip install torchmetrics -qqq
 import torchmetrics
 
-# !pip install pytorch_lightning -qqq
+!pip install pytorch_lightning -qqq
 import pytorch_lightning as pl
 import os
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 # put cifar10_models dir (with state_dict folder that has weights) in same dir as this script; can select model and weights file from just one arch if want
-from cifar10_models.mobilenetv2 import mobilenet_v2
+# from cifar10_models.mobilenetv2 import mobilenet_v2
 
 import functools
 
@@ -163,7 +163,8 @@ class Teacher_pl(pl.LightningModule):
     def __init__(self, pretrained_on, num_classes=100):
         super().__init__()
         if pretrained_on=="cifar10":
-          self.teacher = mobilenet_v2(pretrained=True)
+          # self.teacher = mobilenet_v2(pretrained=True)
+          print("hi")
         elif pretrained_on=="cifar100":
           self.teacher = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_mobilenetv2_x1_4", pretrained=True)
           if num_classes != 100:
@@ -362,27 +363,38 @@ if __name__ == '__main__':
     general_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
     general_teacher_trainer.test(general_teacher_model, cifar100_data_module)
     
-    general_distiller_model = Distiller_pl(num_classes=100, trained_teacher=general_teacher_model)
-    general_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
-    general_distiller_trainer.fit(general_distiller_model, cifar100_data_module)
-    general_distiller_trainer.test(general_distiller_model, cifar100_data_module)
+    # general_distiller_model = Distiller_pl(num_classes=100, trained_teacher=general_teacher_model)
+    # general_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    # general_distiller_trainer.fit(general_distiller_model, cifar100_data_module)
+    # general_distiller_trainer.test(general_distiller_model, cifar100_data_module)
     # general_distiller_trainer.save_checkpoint("general_distilled.ckpt")
+
+    # loads checkpoint for general distilled
+    general_distiller_model = Distiller_pl.load_from_checkpoint(checkpoint_path="general_distilled.ckpt", num_classes=100, trained_teacher=general_teacher_model)
+    general_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    general_distiller_trainer.test(general_distiller_model, cifar100_data_module)
     
     general_trained_student = general_distiller_model.get_student()
     
     # # teacher fine-tuning for cifar10fsl
-    # specific_teacher_model = Teacher_pl(num_classes=10)
+    # specific_teacher_model = Teacher_pl(pretrained_on="cifar100", num_classes=10)
     # specific_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
     # specific_teacher_trainer.fit(specific_teacher_model, cifar10_data_module)
     # specific_teacher_trainer.test(specific_teacher_model, cifar10_data_module)
     # specific_teacher_trainer.save_checkpoint("teacher_finetuned.ckpt")
 
-    specific_teacher_model = Teacher_pl(pretrained_on="cifar10", num_classes=10)
-    specific_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    # loads checpoint for fine-tuned teacher
+    specific_teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_finetuned.ckpt", pretrained_on="cifar100", num_classes=10)
+    specific_teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=10)
     specific_teacher_trainer.test(specific_teacher_model, cifar10_data_module)
+
+    # # uses teacher pretrained directly on cifar10 instead of fine-tuned from pretrained on cifar100
+    # specific_teacher_model = Teacher_pl(pretrained_on="cifar10", num_classes=10)
+    # specific_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    # specific_teacher_trainer.test(specific_teacher_model, cifar10_data_module)
     
     specific_distiller_model = Distiller_pl(num_classes=10, trained_teacher=specific_teacher_model, student=general_trained_student)
     specific_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10) #callbacks=[early_stop_callback]
     specific_distiller_trainer.fit(specific_distiller_model, cifar10_data_module)
     specific_distiller_trainer.test(specific_distiller_model, cifar10_data_module)
-    # specific_distiller_trainer.save_checkpoint("specific_distilled.ckpt")
+    specific_distiller_trainer.save_checkpoint("specific_distilled.ckpt")

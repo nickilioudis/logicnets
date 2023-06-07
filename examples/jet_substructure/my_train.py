@@ -30,145 +30,50 @@ from torch.utils.tensorboard import SummaryWriter
 from dataset import JetSubstructureDataset
 from models import JetSubstructureNeqModel, JetSubstructureConvNeqModel # N added
 
-# N - added
+######################################### start N Added ###############################################
 import torchvision
 import torchvision.transforms as transforms
 # from torchvision.datasets import MNIST
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, CIFAR100
 import torchmetrics
 import pytorch_lightning as pl
 import os
 
+# from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+# put cifar10_models dir (with state_dict folder that has weights) in same dir as this script; can select model and weights file from just one arch if want
+# from cifar10_models.mobilenetv2 import mobilenet_v2
+# import functools
+
+# BatchNorm2d = functools.partial(nn.BatchNorm2d)
+######################################### end N Added ##################################################
+
 
 ######################################### start N Added ###############################################
-class Teacher(nn.Module):
-    def __init__(self):
-        super().__init__()
 
-        self.conv1 = nn.Conv2d(3, 64, (3,3), stride=(1, 1)) #channel input number also changes with dataset
-        self.batchnorm2d1 = nn.BatchNorm2d(64)
-        # self.act1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(64, 64, (3,3), stride=(1, 1))
-        self.batchnorm2d2 = nn.BatchNorm2d(64)
-        # self.act2 = nn.ReLU()
-        # self.pool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
-
-        self.conv3 = nn.Conv2d(64, 128, (3,3), stride=(1, 1))
-        self.batchnorm2d3 = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(128, 128, (3,3), stride=(1, 1))
-        self.batchnorm2d4 = nn.BatchNorm2d(128)
-        # self.act3 = nn.ReLU()
-        # self.pool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
-
-        self.conv5 = nn.Conv2d(128, 256, (3,3), stride=(1, 1))
-        self.batchnorm2d5 = nn.BatchNorm2d(256)
-        # self.act4 = nn.ReLU()
-        self.conv6 = nn.Conv2d(256, 256, (3,3), stride=(1, 1))
-        self.batchnorm2d6 = nn.BatchNorm2d(256)
-
-        # self.act5 = nn.ReLU()
-        self.fc1 = nn.Linear(256*18*18, 512) # need to change this depending on dataset!
-        self.batchnorm1d1 = nn.BatchNorm1d(512)
-        # self.act6 = nn.ReLU()
-        self.fc2 = nn.Linear(512, 512)
-        self.batchnorm1d2 = nn.BatchNorm1d(512)
-        # self.act7 = nn.ReLU()
-        self.fc_final = nn.Linear(512, 10)
-        self.batchnorm1d_final = nn.BatchNorm1d(10)
-
-        self.act = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=(1, 1))
-
-# Conv64,3,1,
-# BatchNorm,
-# Conv64,3,1,
-# BatchNorm,
-# MaxPool2,
-# Conv128,3,1,
-# BatchNorm,
-# Conv128,3,1,
-# BatchNorm, 
-# MaxPool2,
-# Conv256,3,1,
-# BatchNorm,
-# Conv256,3,1,
-# BatchNorm,
-
-# FConn512,
-# BatchNorm,
-# FConn512,
-# BatchNorm, 
-# FConn10,
-# BatchNorm,
-# SoftMax
-
-    # sooo - discovered Keras mis-documented padding=same (https://github.com/keras-team/keras/issues/15703), bc setting stride>1 yields output size diff to input
-    # which means output of e.g. conv1 was 14x14 instead of 28x28
-    # Hence, after looking at model summary of ref KD and checking dimensions, basically did educated trial and error to get padding here in PyTorch Lightning to yield same output sizes at each layer as Keras, to compare
-    # Many key points, incl: 'padding' arg of nn.Conv2D does not allow diff left/right or top/bottom padding, only one tuple of (left/right, top/bot), so odd kernel size screws things up
-    # Hence have to use F.pad to explicitly pad left and right, top and bottom separately
-    # Also, padding='same' only supported for stride=(1,1), in nn.Conv2D
-    def forward(self, x):
-        # print(x.size())
-        # x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv1(x)
-        x = self.batchnorm2d1(x)
-        x = self.act(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv2(x)
-        x = self.batchnorm2d2(x)
-        x = self.act(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 0, 1, 0))
-        x = self.pool(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv3(x)
-        x = self.batchnorm2d3(x)
-        x = self.act(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 0, 1, 0))
-        x = self.pool(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv4(x)
-        x = self.batchnorm2d4(x)
-        x = self.act(x)
-        # print(x.size())
-        # x = F.pad(x, (1, 1, 1, 1))
-        x = self.conv5(x)
-        x = self.batchnorm2d5(x)
-        x = self.act(x)
-        # print(x.size())
-        x = self.conv6(x)
-        x = self.batchnorm2d6(x)
-        x = self.act(x)
-        # print(x.size())
-
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = self.batchnorm1d1(x)
-        x = self.act(x)
-        # print(x.size())
-        x = self.fc2(x)
-        x = self.batchnorm1d2(x)
-        x = self.act(x)
-        # print(x.size())
-        x = self.fc_final(x)
-        x = self.batchnorm1d_final(x)
-        return x
-    
+device = torch.device("mps")
 
 class Teacher_pl(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, pretrained_on, num_classes=100):
         super().__init__()
-        self.teacher = Teacher()
-        self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
-        self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=10)
+        if pretrained_on=="cifar10":
+          # self.teacher = mobilenet_v2(pretrained=True)
+          print("hi")
+        elif pretrained_on=="cifar100":
+          self.teacher = torch.hub.load("chenyaofo/pytorch-cifar-models", "cifar100_mobilenetv2_x1_4", pretrained=True)
+          if num_classes != 100:
+            self.teacher.classifier = nn.Sequential(
+              nn.Dropout(0.2),
+              nn.Linear(self.teacher.last_channel, num_classes),
+            )
+        else:
+          print("No pretraining specified for teacher")
+        # for param in self.teacher.parameters():
+        #   param.requires_grad = False
+        self.train_acc = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
+        self.test_acc = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
 
     def forward(self, x):
-        return self.teacher.forward(x)
+        return self.teacher(x)
 
     def teacher_loss(self, teacher_predictions, labels):
       criterion = nn.CrossEntropyLoss()
@@ -193,43 +98,46 @@ class Teacher_pl(pl.LightningModule):
       self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
-      optimizer = optim.Adam(self.teacher.parameters(), lr=1e-3)
+      optimizer = optim.Adam(self.teacher.parameters(), lr=5e-4)
       return optimizer
-    
 
-# class MNISTDataModule(pl.LightningDataModule):
-
-#   def setup(self, stage):
-#     # transforms for images
-#     transform=transforms.Compose([transforms.ToTensor(), 
-#                                   transforms.Normalize((0.5,), (0.5,))])
-      
-#     # prepare transforms standard to MNIST
-#     self.mnist_train = MNIST(os.getcwd(), train=True, download=True, transform=transform)
-#     self.mnist_test = MNIST(os.getcwd(), train=False, download=True, transform=transform)
-
-#   def train_dataloader(self):
-#     return DataLoader(self.mnist_train, batch_size=64, num_workers=0)
-
-#   def test_dataloader(self):
-#     return DataLoader(self.mnist_test, batch_size=64, num_workers=0)
-  
 class CIFAR10DataModule(pl.LightningDataModule):
 
   def setup(self, stage):
     # transforms for images
+    mean = [0.4914, 0.4822, 0.4465]
+    std = [0.2471, 0.2435, 0.2616]
     transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,), (0.5,))])
+                                  transforms.Normalize(mean, std)])
       
-    # prepare transforms standard to MNIST
+    # prepare standard transforms
     self.cifar10_train = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
     self.cifar10_test = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
 
   def train_dataloader(self):
-    return DataLoader(self.cifar10_train, batch_size=32, num_workers=10)
+    return DataLoader(self.cifar10_train, batch_size=64, num_workers=10)
 
   def test_dataloader(self):
-    return DataLoader(self.cifar10_test, batch_size=32, num_workers=10)
+    return DataLoader(self.cifar10_test, batch_size=64, num_workers=10)
+
+class CIFAR100DataModule(pl.LightningDataModule):
+
+  def setup(self, stage):
+    # transforms for images
+    mean = [0.507, 0.4865, 0.4409]
+    std = [0.2673, 0.2564, 0.2761]
+    transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize(mean, std)])
+      
+    # prepare standard transforms
+    self.cifar100_train = CIFAR100(os.getcwd(), train=True, download=True, transform=transform)
+    self.cifar100_test = CIFAR100(os.getcwd(), train=False, download=True, transform=transform)
+
+  def train_dataloader(self):
+    return DataLoader(self.cifar100_train, batch_size=64, num_workers=10)
+
+  def test_dataloader(self):
+    return DataLoader(self.cifar100_test, batch_size=64, num_workers=10)
 
 ######################################### end N Added ###############################################
 
@@ -298,35 +206,10 @@ configs = {
         "seed": 2,
         "checkpoint": None,
     },
-    # "conv-student": {
-    #     "hidden_layers": {
-    #         "conv": [16, 32],
-    #         "fc": [10],
-    #     },
-    #     "conv_params": {
-    #         "in_height": 28,
-    #         "in_width": 28,
-    #         "in_channels": 1,
-    #         "kernel_height": 3,
-    #         "kernel_width": 3,
-    #     },
-    #     "input_bitwidth": 2,
-    #     "hidden_bitwidth": 2,
-    #     "output_bitwidth": 2,
-    #     "input_fanin": 3,
-    #     "hidden_fanin": 3,
-    #     "output_fanin": 3,
-    #     "weight_decay": 1e-3,
-    #     "batch_size": 64,
-    #     "epochs": 100,
-    #     "learning_rate": 1e-3,
-    #     "seed": 2,
-    #     "checkpoint": None,
-    # },
     "conv-student": {
         "hidden_layers": {
-            "conv": [16, 32, 32],
-            "fc": [32, 10],
+            "conv": [32, 32, 64, 64, 64, 96, 96, 96],
+            "fc": [], # does last fc automatically using model_cfg['output_length'] specified before training
         },
         "conv_params": {
             "in_height": 32,
@@ -335,16 +218,16 @@ configs = {
             "kernel_height": 3,
             "kernel_width": 3,
         },
-        "input_bitwidth": 2,
-        "hidden_bitwidth": 2,
-        "output_bitwidth": 2,
-        "input_fanin": 3,
-        "hidden_fanin": 3,
-        "output_fanin": 3,
-        "weight_decay": 1e-3,
-        "batch_size": 32,
-        "epochs": 100,
-        "learning_rate": 1e-3,
+        "input_bitwidth": 16,
+        "hidden_bitwidth": 16,
+        "output_bitwidth": 16,
+        "input_fanin": 3, #3*3*3*8,
+        "hidden_fanin": 3, #32*3*3*8,
+        "output_fanin": 3, #96*16*16*8,
+        "weight_decay": 0,
+        "batch_size": 64,
+        "epochs": 10,
+        "learning_rate": 5e-4,
         "seed": 2,
         "checkpoint": None,
     },
@@ -385,31 +268,51 @@ other_options = {
 
  ########################### start N Added #######################
 
+# def student_loss(student_predictions, labels):
+#       criterion = nn.CrossEntropyLoss()
+#       student_loss = criterion(student_predictions, labels)
+#       return student_loss
+
+
+# # notes: removed self keyword bc no longer method of a class
+# def total_loss(teacher_predictions, student_predictions, labels):
+#       distillation_criterion = nn.KLDivLoss()
+#       alpha=0.1
+#       temperature=10
+#       student_loss_m = student_loss(student_predictions, labels) # gave _m subscript since no longer have class and would confuse student_loss var with function
+#       distillation_loss = (
+#           distillation_criterion(
+#               torch.nn.functional.softmax(teacher_predictions / temperature, dim=1),
+#               torch.nn.functional.softmax(student_predictions / temperature, dim=1),
+#           )
+#           * temperature**2
+#       )
+#       return alpha*student_loss_m + (1-alpha)*distillation_loss
+
 def student_loss(student_predictions, labels):
       criterion = nn.CrossEntropyLoss()
       student_loss = criterion(student_predictions, labels)
       return student_loss
 
-
-# notes: removed self keyword bc no longer method of a class
-def total_loss(teacher_predictions, student_predictions, labels):
-      distillation_criterion = nn.KLDivLoss()
-      alpha=0.1
-      temperature=10
-      student_loss_m = student_loss(student_predictions, labels) # gave _m subscript since no longer have class and would confuse student_loss var with function
-      distillation_loss = (
-          distillation_criterion(
-              torch.nn.functional.softmax(teacher_predictions / temperature, dim=1),
-              torch.nn.functional.softmax(student_predictions / temperature, dim=1),
-          )
-          * temperature**2
+# notes: removed self keyword bc no longer method of a class      
+def total_loss(teacher_predictions, student_predictions, labels, alpha, temperature):
+  distillation_criterion = nn.KLDivLoss()
+#   alpha=0.1
+#   temperature=10
+  student_loss_m = student_loss(student_predictions, labels) # gave _m subscript since no longer have class and would confuse student_loss var with function
+  distillation_loss = (
+      distillation_criterion(
+          torch.nn.functional.log_softmax(student_predictions / temperature, dim=1),
+          torch.nn.functional.softmax(teacher_predictions / temperature, dim=1)
       )
-      return alpha*student_loss_m + (1-alpha)*distillation_loss
+      *temperature**2
+  )
+  return alpha*student_loss_m + (1 -alpha)*distillation_loss
 
  ########################### end N Added #######################
 
 
-def train(model, datasets, train_cfg, options, teacher_model): # N - added teacher model
+def train(model, datasets, train_cfg, options, trained_teacher, alpha=0.1, temperature=10):
     # Create data loaders for training and inference:
     train_loader = DataLoader(datasets["train"], batch_size=train_cfg['batch_size'], shuffle=True)
     val_loader = DataLoader(datasets["valid"], batch_size=train_cfg['batch_size'], shuffle=False)
@@ -443,7 +346,13 @@ def train(model, datasets, train_cfg, options, teacher_model): # N - added teach
 
     # Push the model to the GPU, if necessary
     if options["cuda"]:
-        model.cuda()
+        ############ start N changed ##########
+        # model.cuda()
+        print("moving model to GPU:")
+        model.to(device)
+        print("moving teacher to GPU:")
+        trained_teacher.to(device)
+        ############ end N changed ##########
 
     # Setup tensorboard
     writer = SummaryWriter(options["log_dir"])
@@ -458,7 +367,9 @@ def train(model, datasets, train_cfg, options, teacher_model): # N - added teach
         correct = 0
         for batch_idx, (data, target) in enumerate(train_loader):
             if options["cuda"]:
-                data, target = data.cuda(), target.cuda()
+                # data, target = data.cuda(), target.cuda()
+                # print("moving data to GPU") # N - added
+                data, target = data.to(device), target.to(device) # N - changed
             optimizer.zero_grad()
             output = model(data)
 
@@ -475,8 +386,8 @@ def train(model, datasets, train_cfg, options, teacher_model): # N - added teach
             # loss = criterion(output, target) # when training with MNIST, prior to KD integration
 
             # teacher_model passed into arg of train() is pl module but has simple, well-defined forward, so can do this
-            teacher_predictions = teacher_model.forward(data) #NOTE: reason why accuracy might be bad is bc distillation loss thinks predictions are PRE-softmax probabilities whereas here they are actual labels??
-            loss = total_loss(teacher_predictions, output, target)
+            teacher_predictions = trained_teacher.forward(data) #NOTE: reason why accuracy might be bad is bc distillation loss thinks predictions are PRE-softmax probabilities whereas here they are actual labels??
+            loss = total_loss(teacher_predictions, output, target, alpha, temperature)
 
             # .detach() makes separate copy of tensor that won't keep metadata like grad propagation?
             # .max(1, keepdim=True)[1] returns indices max values along dim 1 (cols) of output vec; this convert each softmax prob vector to tensor of class indices
@@ -555,7 +466,8 @@ def test(model, dataset_loader, cuda):
         accLoss = 0.0
         for batch_idx, (data, target) in enumerate(dataset_loader):
             if cuda:
-                data, target = data.cuda(), target.cuda()
+                # data, target = data.cuda(), target.cuda()
+                data, target = data.to(device), target.to(device) # N - changed
             output = model(data)
             prob = F.softmax(output, dim=1)
             pred = output.detach().max(1, keepdim=True)[1]
@@ -654,63 +566,132 @@ if __name__ == "__main__":
     np.random.seed(train_cfg['seed'])
     torch.manual_seed(train_cfg['seed'])
     os.environ['PYTHONHASHSEED'] = str(train_cfg['seed'])
-    if options["cuda"]:
-        torch.cuda.manual_seed_all(train_cfg['seed'])
-        torch.backends.cudnn.deterministic = True
+    # N - changed
+    # if options["cuda"]:
+    #     torch.cuda.manual_seed_all(train_cfg['seed'])
+    #     torch.backends.cudnn.deterministic = True
 
 
 
     ########################## start N changed ###########################
 
-    # data_module = MNISTDataModule()
-    data_module = CIFAR10DataModule()
+    # # data_module = MNISTDataModule()
+    # data_module = CIFAR10DataModule()
 
-    # uncomment to train afresh
-    # train teacher as pl module
-    teacher_model = Teacher_pl() #NOTE this will be passed to train(), but only use its .forward there
-    teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
-    teacher_trainer.fit(teacher_model, data_module)
-    teacher_trainer.test(teacher_model, data_module)
-    teacher_trainer.save_checkpoint("teacher.ckpt")
-
-    # comment out, when training afresh
-    # teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher.ckpt")
+    # # uncomment to train afresh
+    # # train teacher as pl module
+    # teacher_model = Teacher_pl() #NOTE this will be passed to train(), but only use its .forward there
     # teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
+    # teacher_trainer.fit(teacher_model, data_module)
     # teacher_trainer.test(teacher_model, data_module)
+    # teacher_trainer.save_checkpoint("teacher.ckpt")
 
-    # Fetch the datasets
-    dataset = {}
-    # dataset['train'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train")
-    # dataset['valid'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train") # This dataset is so small, we'll just use the training set as the validation set, otherwise we may have too few trainings examples to converge.
-    # dataset['test'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="test")
+    # # comment out, when training afresh
+    # # teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher.ckpt")
+    # # teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=5)
+    # # teacher_trainer.test(teacher_model, data_module)
 
-    # transforms for images
+    # # Fetch the datasets
+    # dataset = {}
+    # # dataset['train'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train")
+    # # dataset['valid'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="train") # This dataset is so small, we'll just use the training set as the validation set, otherwise we may have too few trainings examples to converge.
+    # # dataset['test'] = JetSubstructureDataset(dataset_cfg['dataset_file'], dataset_cfg['dataset_config'], split="test")
+
+    # # transforms for images
+    # # transform=transforms.Compose([transforms.ToTensor(), 
+    # #                               transforms.Normalize((0.5,), (0.5,)),
+    # #                               transforms.Lambda(torch.flatten)]) # need to add torch.flatten bc student model is currently same as jsc and accepts only 1D vec as input data, not 2D MNIST images
+    
+    # # transforms for images
     # transform=transforms.Compose([transforms.ToTensor(), 
-    #                               transforms.Normalize((0.5,), (0.5,)),
-    #                               transforms.Lambda(torch.flatten)]) # need to add torch.flatten bc student model is currently same as jsc and accepts only 1D vec as input data, not 2D MNIST images
+    #                               transforms.Normalize((0.5,), (0.5,), (0.5,))])
     
-    # transforms for images
-    transform=transforms.Compose([transforms.ToTensor(), 
-                                  transforms.Normalize((0.5,), (0.5,), (0.5,))])
+    # # prepare transforms standard to dataset
+    # dataset['train'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    # dataset['valid'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
+    # dataset['test'] = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
+
+
+    # data modules are for pytorch lightning teacher training, data sets are for logicnets training/distillation
+    print("----> creating data modules:")
+    cifar100_data_module = CIFAR100DataModule()
+    cifar10_data_module = CIFAR10DataModule()
+
+    print("----> creating cifar100 dataset:")
+    cifar100dataset = {}
+    cifar100mean = [0.507, 0.4865, 0.4409]
+    cifar100std = [0.2673, 0.2564, 0.2761]
+    cifar100transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize(cifar100mean, cifar100std)])
+    cifar100dataset['train'] = CIFAR100(os.getcwd(), train=True, download=True, transform=cifar100transform)
+    cifar100dataset['valid'] = CIFAR100(os.getcwd(), train=True, download=True, transform=cifar100transform)
+    cifar100dataset['test'] = CIFAR100(os.getcwd(), train=False, download=True, transform=cifar100transform)
+
+    print("----> creating cifar10 dataset:")
+    cifar10dataset = {}
+    cifar10mean = [0.4914, 0.4822, 0.4465]
+    cifar10std = [0.2471, 0.2435, 0.2616]
+    cifar10transform=transforms.Compose([transforms.ToTensor(), 
+                                  transforms.Normalize(cifar10mean, cifar10std)])
+    cifar10dataset['train'] = CIFAR10(os.getcwd(), train=True, download=True, transform=cifar10transform)
+    cifar10dataset['valid'] = CIFAR10(os.getcwd(), train=True, download=True, transform=cifar10transform)
+    cifar10dataset['test'] = CIFAR10(os.getcwd(), train=False, download=True, transform=cifar10transform)
     
-    # prepare transforms standard to dataset
-    dataset['train'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
-    dataset['valid'] = CIFAR10(os.getcwd(), train=True, download=True, transform=transform)
-    dataset['test'] = CIFAR10(os.getcwd(), train=False, download=True, transform=transform)
+    print("----> testing general teacher:")
+    general_teacher_model = Teacher_pl(pretrained_on="cifar100", num_classes=100)
+    general_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    general_teacher_trainer.test(general_teacher_model, cifar100_data_module)
+    
 
-    ########################## end N changed ###########################
+    # general_distiller_model = Distiller_pl(num_classes=100, trained_teacher=general_teacher_model)
+    # general_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    # general_distiller_trainer.fit(general_distiller_model, cifar100_data_module)
+    # general_distiller_trainer.test(general_distiller_model, cifar100_data_module)
+    # general_distiller_trainer.save_checkpoint("general_distilled.ckpt")
+    
+    # general_trained_student = general_distiller_model.get_student()
 
-
-
+    print("----> training general distillation:")
     # Instantiate model
-    x, y = dataset['train'][0]
+    # x, y = dataset['train'][0]
     # model_cfg['input_length'] = len(x)
-    model_cfg['output_length'] = 10 # N - changed from len(y)
+    model_cfg['output_length'] = 100 # N - changed from len(y)
     model = JetSubstructureConvNeqModel(model_cfg)
     if options_cfg['checkpoint'] is not None:
         print(f"Loading pre-trained checkpoint {options_cfg['checkpoint']}")
         checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
         model.load_state_dict(checkpoint['model_dict'])
 
-    # train(model, dataset, train_cfg, options_cfg, teacher_model) # N - added teacher_model arg
+    train(model, cifar100dataset, train_cfg, options_cfg, general_teacher_model, alpha=0.1) # N - added teacher model arg
+    
+    # # teacher fine-tuning for cifar10
+    # specific_teacher_model = Teacher_pl(pretrained_on="cifar100", num_classes=10)
+    # specific_teacher_trainer = pl.Trainer(accelerator="gpu", max_epochs=10)
+    # specific_teacher_trainer.fit(specific_teacher_model, cifar10_data_module)
+    # specific_teacher_trainer.test(specific_teacher_model, cifar10_data_module)
+    # specific_teacher_trainer.save_checkpoint("teacher_finetuned.ckpt")
+
+    print("----> testing specific teacher:")
+    specific_teacher_model = Teacher_pl.load_from_checkpoint(checkpoint_path="teacher_finetuned.ckpt", pretrained_on="cifar100", num_classes=10)
+    specific_teacher_trainer = pl.Trainer(accelerator="auto", max_epochs=10)
+    specific_teacher_trainer.test(specific_teacher_model, cifar10_data_module)
+
+    # can't just change model_cfg and re-create JetSubstructureConvNeqModel from it because would lose all the weights!
+    # doing model_cfg['output_length']=10 thus isn't required; model_cfg can be thought of not as maintaining state, but initial setup config
+    print("----> changing model's last fc layer:")
+    model.change_last_fc(new_output_length=10)
+    # model_cfg['output_length'] = 10 # N - changed from len(y)
+    # model = JetSubstructureConvNeqModel(model_cfg)
+    
+    # specific_distiller_model = Distiller_pl(num_classes=10, trained_teacher=specific_teacher_model, student=general_trained_student)
+    # specific_distiller_trainer = pl.Trainer(accelerator="gpu", max_epochs=10) #callbacks=[early_stop_callback]
+    # specific_distiller_trainer.fit(specific_distiller_model, cifar10_data_module)
+    # specific_distiller_trainer.test(specific_distiller_model, cifar10_data_module)
+    # specific_distiller_trainer.save_checkpoint("specific_distilled.ckpt")
+
+    print("----> training specific distillation:")
+    train(model, cifar10dataset, train_cfg, options_cfg, specific_teacher_model, alpha=0.1) # N - added teacher_model arg
+
+
+    ########################## end N changed ###########################
 
