@@ -209,6 +209,7 @@ configs = {
     "conv-student": {
         "hidden_layers": {
             "conv": [32, 32, 64, 64, 64, 96, 96, 96],
+            "pool": [None, None, "max_2_2", None, None, "max_2_2", None, "adap_1"], # adds pooling after corresponding conv layer
             "fc": [], # does last fc automatically using model_cfg['output_length'] specified before training
         },
         "conv_params": {
@@ -218,15 +219,15 @@ configs = {
             "kernel_height": 3,
             "kernel_width": 3,
         },
-        "input_bitwidth": 16,
-        "hidden_bitwidth": 16,
-        "output_bitwidth": 16,
+        "input_bitwidth": 3,
+        "hidden_bitwidth": 3,
+        "output_bitwidth": 3,
         "input_fanin": 3, #3*3*3*8,
         "hidden_fanin": 3, #32*3*3*8,
         "output_fanin": 3, #96*16*16*8,
         "weight_decay": 0,
         "batch_size": 64,
-        "epochs": 10,
+        "epochs": 20,
         "learning_rate": 5e-4,
         "seed": 2,
         "checkpoint": None,
@@ -312,7 +313,7 @@ def total_loss(teacher_predictions, student_predictions, labels, alpha, temperat
  ########################### end N Added #######################
 
 
-def train(model, datasets, train_cfg, options, trained_teacher, alpha=0.1, temperature=10):
+def train(model, datasets, train_cfg, options, trained_teacher, alpha, temperature=10):
     # Create data loaders for training and inference:
     train_loader = DataLoader(datasets["train"], batch_size=train_cfg['batch_size'], shuffle=True)
     val_loader = DataLoader(datasets["valid"], batch_size=train_cfg['batch_size'], shuffle=False)
@@ -447,9 +448,9 @@ def train(model, datasets, train_cfg, options, trained_teacher, alpha=0.1, tempe
                         'val_avg_roc_auc': val_avg_roc_auc,
                         'test_avg_roc_auc': test_avg_roc_auc,
                         'epoch': epoch}
-        torch.save(modelSave, options["log_dir"] + "/checkpoint.pth")
+        torch.save(modelSave, options["log_dir"] + "/full_KD_no_spars_quant3.pth")
         if(maxAcc<val_accuracy):
-            torch.save(modelSave, options["log_dir"] + "/best_accuracy.pth")
+            torch.save(modelSave, options["log_dir"] + "/full_KD_no_spars_quant3_best_acc.pth")
             maxAcc = val_accuracy
         writer.add_scalar('val_accuracy', val_accuracy, (epoch+1)*steps)
         writer.add_scalar('test_accuracy', test_accuracy, (epoch+1)*steps)
@@ -692,6 +693,6 @@ if __name__ == "__main__":
     print("----> training specific distillation:")
     train(model, cifar10dataset, train_cfg, options_cfg, specific_teacher_model, alpha=0.1) # N - added teacher_model arg
 
-
+    print("----> end of: full KD, no sparse, quant 3")
     ########################## end N changed ###########################
 

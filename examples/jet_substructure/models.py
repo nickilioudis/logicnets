@@ -156,7 +156,7 @@ class JetSubstructureConvNeqModel(nn.Module):
         # each conv hidden layer defined as num output channels, and since will do serial patch calculations for now, each output channel is one neuron/NEQ
         # each fc hidden layer just num neurons in that layer
         # TODO: currently only support simplest convolution layers; need to add sparse_conv_kws like stride, padding... to pass when instantiating layer as SparseConvNeq; must add these and kernel size to config explicitly?
-        self.conv_out_flat_length = 96*16*16 #26*26*32 # self.in_height * self.in_width * model_config["hidden_layers"]["conv"][-1]  # assumes padding same: otherwise calc using input dims, kernel size, stride, padding? See pytorhc CONV2D page # this changed with dataset!
+        self.conv_out_flat_length = 96*1*1 #26*26*32 # self.in_height * self.in_width * model_config["hidden_layers"]["conv"][-1]  # assumes padding same: otherwise calc using input dims, kernel size, stride, padding? See pytorhc CONV2D page # this changed with dataset!
         self.num_neurons_conv = [self.in_channels] + model_config["hidden_layers"]["conv"]
         self.num_neurons_fc = [self.conv_out_flat_length] + model_config["hidden_layers"]["fc"] + [model_config["output_length"]]
         self.layer_list = []
@@ -167,12 +167,13 @@ class JetSubstructureConvNeqModel(nn.Module):
             out_features = out_channels # for each 'patch' in any layer's input image (i.e. in_channels * kernel_height * kernel_width), we produce out_channels output values that together form a single pixel of the output image
             bn = nn.BatchNorm2d(out_channels) # N - changed from 1D to 2D
             if i == 1: # first layer
+                print("---->----> adding first conv layer")
                 bn_in = nn.BatchNorm2d(in_channels)
                 input_bias = ScalarBiasScale(scale=False, bias_init=-0.25)
                 input_quant = QuantBrevitasActivation(QuantHardTanh(model_config["input_bitwidth"], max_val=1., narrow_range=False, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn_in, input_bias])
                 output_quant = QuantBrevitasActivation(QuantReLU(bit_width=model_config["hidden_bitwidth"], max_val=1.61, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn])
                 mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["input_fanin"])
-                layer = SparseConvNeq(in_channels=in_channels, out_channels=out_channels, kernel_size=(self.kernel_height, self.kernel_width), input_quant=input_quant, output_quant=output_quant, sparse_conv_kws={'mask': mask})
+                layer = SparseConvNeq(in_channels=in_channels, out_channels=out_channels, kernel_size=(self.kernel_height, self.kernel_width), input_quant=input_quant, output_quant=output_quant, sparse_conv_kws={'mask': mask, 'padding': 1}) # padding w 1 for kernel size 3, so output dims same as input
                 self.layer_list.append(layer)
             # elif i == len(self.num_neurons_conv)-1: # last layer
             #     output_bias_scale = ScalarBiasScale(bias_init=0.33)
@@ -181,33 +182,51 @@ class JetSubstructureConvNeqModel(nn.Module):
             #     layer = SparseConvNeq(in_channels=in_channels, out_channels=out_channels, kernel_size=(self.kernel_height, self.kernel_width), input_quant=self.layer_list[-1].output_quant, output_quant=output_quant, sparse_conv_kws={'mask': mask}, apply_input_quant=False) 
             #     self.layer_list.append(layer)
             else: # in between layers; no separate elif for last layer bc last layer of conv doesn't need diff code like for fc; flattening done by 'forward' anyway
+                print("---->----> adding hidden conv layer")
                 output_quant = QuantBrevitasActivation(QuantReLU(bit_width=model_config["hidden_bitwidth"], max_val=1.61, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn])
                 mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["hidden_fanin"])
-                layer = SparseConvNeq(in_channels=in_channels, out_channels=out_channels, kernel_size=(self.kernel_height, self.kernel_width), input_quant=self.layer_list[-1].output_quant, output_quant=output_quant, sparse_conv_kws={'mask': mask}, apply_input_quant=False) # since building layer list by appending one at a time, self.layer_list[-1].output_quant is quant of last appended layer's (prev layer) outputs, hence input quant
+                layer = SparseConvNeq(in_channels=in_channels, out_channels=out_channels, kernel_size=(self.kernel_height, self.kernel_width), input_quant=self.layer_list[-1].output_quant, output_quant=output_quant, sparse_conv_kws={'mask': mask, 'padding': 1}, apply_input_quant=False) # since building layer list by appending one at a time, self.layer_list[-1].output_quant is quant of last appended layer's (prev layer) outputs, hence input quant
                 self.layer_list.append(layer)
         for i in range(1, len(self.num_neurons_fc)): # bc of first and last elements being conv_out_flat_length and output_length, respectively, num_neurons_fc will always have at least two elems
             in_features = self.num_neurons_fc[i-1]
             out_features = self.num_neurons_fc[i]
             bn = nn.BatchNorm1d(out_features)
-            if i == 1:
-                bn_in = nn.BatchNorm1d(in_features)
-                input_bias = ScalarBiasScale(scale=False, bias_init=-0.25)
-                input_quant = QuantBrevitasActivation(QuantHardTanh(model_config["input_bitwidth"], max_val=1., narrow_range=False, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn_in, input_bias])
-                output_quant = QuantBrevitasActivation(QuantReLU(bit_width=model_config["hidden_bitwidth"], max_val=1.61, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn])
-                mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["input_fanin"])
-                layer = SparseLinearNeq(in_features, out_features, input_quant=input_quant, output_quant=output_quant, sparse_linear_kws={'mask': mask})
-                self.layer_list.append(layer)
-            elif i == len(self.num_neurons_fc)-1:
+            # if i == 1:
+            #     print("---->----> adding first fc layer")
+            #     bn_in = nn.BatchNorm1d(in_features)
+            #     input_bias = ScalarBiasScale(scale=False, bias_init=-0.25)
+            #     input_quant = QuantBrevitasActivation(QuantHardTanh(model_config["input_bitwidth"], max_val=1., narrow_range=False, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn_in, input_bias])
+            #     output_quant = QuantBrevitasActivation(QuantReLU(bit_width=model_config["hidden_bitwidth"], max_val=1.61, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn])
+            #     mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["input_fanin"])
+            #     layer = SparseLinearNeq(in_features, out_features, input_quant=input_quant, output_quant=output_quant, sparse_linear_kws={'mask': mask})
+            #     self.layer_list.append(layer)
+            if i == len(self.num_neurons_fc)-1:
+                print("---->----> adding last fc layer")
                 output_bias_scale = ScalarBiasScale(bias_init=0.33)
                 output_quant = QuantBrevitasActivation(QuantHardTanh(bit_width=model_config["output_bitwidth"], max_val=1.33, narrow_range=False, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn], post_transforms=[output_bias_scale])
                 mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["output_fanin"])
                 layer = SparseLinearNeq(in_features, out_features, input_quant=self.layer_list[-1].output_quant, output_quant=output_quant, sparse_linear_kws={'mask': mask}, apply_input_quant=False)
                 self.layer_list.append(layer)
             else:
+                print("---->----> adding hidden fc layer")
                 output_quant = QuantBrevitasActivation(QuantReLU(bit_width=model_config["hidden_bitwidth"], max_val=1.61, quant_type=QuantType.INT, scaling_impl_type=ScalingImplType.PARAMETER), pre_transforms=[bn])
                 mask = RandomFixedSparsityMask2D(in_features, out_features, fan_in=model_config["hidden_fanin"])
                 layer = SparseLinearNeq(in_features, out_features, input_quant=self.layer_list[-1].output_quant, output_quant=output_quant, sparse_linear_kws={'mask': mask}, apply_input_quant=False)
                 self.layer_list.append(layer)
+
+        self.pool = model_config["hidden_layers"]["pool"]
+        # do this as separate for-loop for clarity and to avoid quant issues while building conv and fc layers (notice input quants look at prev layer)
+        # -1 because num_neurons_conv includes extra input channel element at the beginning
+        for i in range(len(self.num_neurons_conv)-1):
+            if self.pool[i]=="max_2_2":
+                print("---->----> inserting maxpool layer")
+                self.layer_list.insert(i+1, nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)))
+            elif self.pool[i]=="adap_1":
+                print("---->----> adding adapmaxpool layer")
+                self.layer_list.insert(i+1, nn.AdaptiveMaxPool2d(1))
+            else:
+                assert self.pool[i]==None, "Pooling layer specified not currently implemented"
+
         self.module_list = nn.ModuleList(self.layer_list)
         self.is_verilog_inference = False
         self.latency = 1
