@@ -50,7 +50,7 @@ import os
 
 ######################################### start N Added ###############################################
 
-device = torch.device("mps")
+device = torch.device("cuda")
 
 class Teacher_pl(pl.LightningModule):
     def __init__(self, pretrained_on, num_classes=100):
@@ -219,12 +219,12 @@ configs = {
             "kernel_height": 3,
             "kernel_width": 3,
         },
-        "input_bitwidth": 3,
-        "hidden_bitwidth": 3,
-        "output_bitwidth": 3,
-        "input_fanin": 3, #3*3*3*8,
-        "hidden_fanin": 3, #32*3*3*8,
-        "output_fanin": 3, #96*16*16*8,
+        "input_bitwidth": 4,
+        "hidden_bitwidth": 4,
+        "output_bitwidth": 4,
+        "input_fanin": 16, #3*3*3*8,
+        "hidden_fanin": 16, #32*3*3*8,
+        "output_fanin": 16, #96*1*1*8,
         "weight_decay": 0,
         "batch_size": 64,
         "epochs": 20,
@@ -448,9 +448,9 @@ def train(model, datasets, train_cfg, options, trained_teacher, alpha, temperatu
                         'val_avg_roc_auc': val_avg_roc_auc,
                         'test_avg_roc_auc': test_avg_roc_auc,
                         'epoch': epoch}
-        torch.save(modelSave, options["log_dir"] + "/full_KD_no_spars_quant3.pth")
+        torch.save(modelSave, options["log_dir"] + "/no_KD_spars16_quant4.pth")
         if(maxAcc<val_accuracy):
-            torch.save(modelSave, options["log_dir"] + "/full_KD_no_spars_quant3_best_acc.pth")
+            torch.save(modelSave, options["log_dir"] + "/no_KD_spars16_quant4_best_acc.pth")
             maxAcc = val_accuracy
         writer.add_scalar('val_accuracy', val_accuracy, (epoch+1)*steps)
         writer.add_scalar('test_accuracy', test_accuracy, (epoch+1)*steps)
@@ -663,7 +663,7 @@ if __name__ == "__main__":
         checkpoint = torch.load(options_cfg['checkpoint'], map_location='cpu')
         model.load_state_dict(checkpoint['model_dict'])
 
-    train(model, cifar100dataset, train_cfg, options_cfg, general_teacher_model, alpha=0.1) # N - added teacher model arg
+    train(model, cifar100dataset, train_cfg, options_cfg, general_teacher_model, alpha=1) # N - added teacher model arg
     
     # # teacher fine-tuning for cifar10
     # specific_teacher_model = Teacher_pl(pretrained_on="cifar100", num_classes=10)
@@ -691,8 +691,7 @@ if __name__ == "__main__":
     # specific_distiller_trainer.save_checkpoint("specific_distilled.ckpt")
 
     print("----> training specific distillation:")
-    train(model, cifar10dataset, train_cfg, options_cfg, specific_teacher_model, alpha=0.1) # N - added teacher_model arg
+    train(model, cifar10dataset, train_cfg, options_cfg, specific_teacher_model, alpha=1) # N - added teacher_model arg
 
-    print("----> end of: full KD, no sparse, quant 3")
+    print("----> end of: no KD, sparse 16, quant 4")
     ########################## end N changed ###########################
-
